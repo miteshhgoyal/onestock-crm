@@ -1,0 +1,40 @@
+{
+  "summary": "Full backend + frontend testing of the new Telecaller Performance Dashboard (sessions, heartbeat, logout, performance/trend/timeline reports, live status, Smartflo webhook, RBAC, frontend page + nav + timeline drawer). 16/17 backend tests pass; 1 spec deviation in the /trend?period=week endpoint (returns week-to-date, not a full 7-day window). Frontend renders and behaves correctly for admin and correctly hides the page from telecallers.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/reports/telecaller-performance/trend?period=week",
+        "issue": "Returns only week-to-date buckets (Monday through today, e.g. 6 buckets on Saturday). Spec requires exactly 7 daily buckets for period=week. Root cause: local_period_bounds('week') sets end=now instead of start+7d. Fix idea: for the trend endpoint (or perf_bounds for trend), extend end to start + 7 days for 'week' (and to end-of-month for 'month'), or generate a fixed-length series regardless of `end`."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_performance.py",
+    "/app/test_reports/pytest/performance_results.xml"
+  ],
+  "action_items": [
+    "Fix /api/reports/telecaller-performance/trend to always return the full 7-day series for period=week (and full-month series for period=month), regardless of current day-of-week."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1949 lines — consider splitting into routers (auth, leads, calls, reports) per code-review guideline (>700 lines).",
+    "perf_bounds('week') builds an inconsistent window: start=Monday 00:00 IST but end=now → less than 7 days. Prefer explicit `end = start + 7 days` for reports/trend endpoints; the mismatch between 'week' start (Mon) and 'today' semantics also affects charts.",
+    "trend endpoint iterates sessions with a while-loop calling next_ist_midnight per day — OK for small ranges but O(days*sessions); fine for now.",
+    "GET /api/calls/smartflo-webhook is exposed (api_route GET|POST). If GET is only for provider handshake, ensure it does not accept mutating query params — currently it can, since GET goes through the same handler and mutates DB. Consider gating writes to POST only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_performance.py"
+  ],
+  "success_rate": {"backend": "94% (16/17)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "As documented in /app/memory/test_credentials.md; used admin (butbrucewill@gmail.com), leader (qa.leader@crmtest.com), caller (qa.caller@crmtest.com).",
+  "seed_data_creation": "None. No call_attempts were seeded; webhook tests only verified auth (401) and unknown-call unmatched:false path.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend test file: /app/backend/tests/test_performance.py. All perf/webhook flows already covered. Only the week-trend 7-bucket assertion fails; adjust perf_bounds behavior for trend/week to also cover the fix. Frontend performance page + timeline drawer + role-based nav visibility all verified working via public REACT_APP_BACKEND_URL. When re-testing, note that logging in the QA caller opens/closes sessions so the caller's live status will flip based on the last test's logout state.",
+  "rca of the issue": "perf_bounds delegates to local_period_bounds for 'week'/'month'. local_period_bounds sets end = now + 1µs, so on any non-Sunday the resulting window is shorter than 7 days. telecaller_performance_trend builds buckets by iterating start→end at IST midnight, yielding fewer than 7 buckets. Fix: for the trend endpoint, expand `end` to `start + 7 days` (week) or start-of-next-month (month) before bucketing, or normalize inside perf_bounds when called from the trend route."
+}

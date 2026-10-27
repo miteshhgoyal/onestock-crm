@@ -1,0 +1,36 @@
+[
+  {
+    "_id": {
+      "$oid": "6a87ee5a86662ab4c55b27bf"
+    },
+    "name": "Alpha Team",
+    "leader_id": {
+      "$oid": "6a87ee5c86662ab4c55b27c2"
+    },
+    "created_at": {
+      "$date": "2026-08-21T06:21:14.811Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a87ee5a86662ab4c55b27c0"
+    },
+    "name": "Beta Team",
+    "leader_id": {
+      "$oid": "6a87ee5d86662ab4c55b27c3"
+    },
+    "created_at": {
+      "$date": "2026-08-21T06:21:14.915Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6adf4e452e1fc137f1592467"
+    },
+    "name": "team rm",
+    "leader_id": null,
+    "created_at": {
+      "$date": "2026-10-26T12:57:41.071Z"
+    }
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "primary_db": "team-pipeline-5-test_database",
+  "exported_at": "2026-10-27T14:16:05.785199+00:00",
+  "exported_by": "butbrucewill@gmail.com",
+  "databases": {
+    "team-pipeline-5-test_database": {
+      "activities": 130456,
+      "call_attempts": 23229,
+      "chat_messages": 14,
+      "courses": 5,
+      "crm_activities": 0,
+      "documents": 34,
+      "leads": 29226,
+      "login_attempts": 16,
+      "payment_club_events": 7782,
+      "sessions": 533,
+      "settings": 4,
+      "teams": 3,
+      "users": 31
+    }
+  },
+  "database_count": 1,
+  "collection_count": 13,
+  "total_documents": 191333
+}

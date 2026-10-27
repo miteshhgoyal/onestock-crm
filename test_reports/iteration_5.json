@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 5 validated the new desktop/phone call_mode + agent_extension self-service feature end-to-end. Backend: added /app/backend/tests/test_call_modes.py (17 cases, 15 PASS + 1 SKIP for live-call budget + 1 FAIL revealing a real regression on GET /api/users, see below). Coverage: PATCH /api/calls/preferences works for owner/subadmin/team_leader/telecaller; invalid call_mode='fax' -> 400 with 'desktop or phone' message; unauth -> 401; preferences only mutate the caller's own doc (verified by snapshotting a second user before/after). GET /api/calls/diagnostics rings_on='mobile phone <n>' in phone mode with agent_number_sent_as 91-prefixed; rings_on='Smartflo softphone on this computer (extension 1024)' in desktop mode with ready:true; desktop w/o ext -> ready:false with 'extension' problem. Desktop-mode POST /api/calls/click-to-call w/o extension -> 400 with actionable message (not 500, no Tata call). ONE LIVE desktop-mode call fired: owner ext=1024, dest=9810012301; Tata returned 502 (expected — 1024 not a real registered agent in this account) but the audit row in mongo.call_attempts has agent_number='1024' (raw extension, NOT 91-prefixed) and call_mode='desktop'. ONE LIVE phone-mode call fired: agent_number persisted as '919812345678', call_mode='phone'. Per-request override test was SKIPPED intentionally to stay within the 2-live-call budget as instructed. Admin PATCH /api/users/{id} accepts agent_extension+call_mode and rejects call_mode='bogus' with 400. Full regression: 71/71 backend_test.py+test_export_tz.py PASS. test_smartflo.py + test_documents.py were NOT rerun to avoid extra live Smartflo/object-storage cost — they last passed 105/105 in iteration 4. Frontend (both 1920x1080 and 390x844): logged in as owner butbrucewill@gmail.com, /dialer renders call-settings-card, clicking call-mode-desktop reveals call-settings-extension + call-settings-save and softphone-extension-link href points to chromewebstore.google.com/detail/smartflo-softphone/dbhcchccbhpnohpmcallfdfcfnogdfpo. Saving extension=1024 persists after full page reload. Switching to call-mode-phone fires 'Calls will now ring your phone first' toast (visible in screenshot). Desktop+empty extension shows call-settings-problems block. /users table has 15 user-call-mode-* Select components and 15 user-agent-extension-* Inputs. Add-user dialog exposes new-user-agent-extension. No page-level horizontal overflow at 390px (document scrollWidth==clientWidth==390). Telecaller caller1@crm.com CAN see and use the same CallSettingsCard on /dialer (intentional self-service); switching to desktop w/o extension and clicking data-testid=direct-dial-button raises a 400 and the error toast shows the exact backend message 'Desktop calling needs your Smartflo extension. Add it under Call settings (or ask an admin), then sign in to the Smartflo Softphone browser extension.'",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/users", "issue": "Response docs do NOT include the new call_mode/agent_extension keys for legacy users whose Mongo document was created before the migration (e.g. caller2 Neha Sharma). The spec explicitly states 'GET /api/users returns call_mode and agent_extension for each user'. Newly-updated users have the keys; untouched legacy users don't. Fix: either backfill users with $set defaults on startup, or normalise the response in list_users to always emit {call_mode: doc.get('call_mode') or 'phone', agent_extension: doc.get('agent_extension') or ''}. The frontend Users page currently masks this because <Select> falls back to placeholder when value is undefined, but any consumer relying on the field being present will break."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_call_modes.py",
+    "/app/test_reports/pytest/iteration5_callmodes.xml",
+    "/app/test_reports/pytest/iteration5_regression.xml"
+  ],
+  "action_items": [
+    "Backend: normalise GET /api/users so every row includes call_mode (default 'phone') and agent_extension (default '') even for legacy user docs — one-line change in list_users serialiser or a startup migration `db.users.update_many({call_mode: {$exists: false}}, {$set: {call_mode: 'phone', agent_extension: ''}})`."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1206 lines and still growing (call preferences + diagnostics + click-to-call all in the same file). Extraction into routers/calls.py, routers/users.py is overdue.",
+    "PATCH /api/calls/preferences allows agent_number update — that field is admin-managed for other users but here any telecaller can rewrite their OWN agent_number too. Ok if intentional, but the request said 'agent_extension + call_mode'; documenting/limiting agent_number self-service would tighten the contract.",
+    "click-to-call desktop branch does `agent_identifier = ''.join(ch for ch in str(user['agent_extension']) if ch.isdigit())` which silently strips non-digit characters — e.g. '1024a' becomes '1024'. Consider rejecting non-numeric extensions with a 400 instead of silent coercion so admins see typos.",
+    "The audit row insert on the transport-error path does NOT include call_mode (line ~695-704), while the success path DOES (line 721). Add call_mode to the exception branch for auditability.",
+    "GET /api/users returns raw Mongo docs via serialize() and thus leaks the shape of the DB (missing fields for legacy users). Wrap in PublicUser or normalise defaults — this is the root cause of the minor issue above.",
+    "call_attempts still has no TTL/index on created_at (flagged 3 iterations in a row). Add `db.call_attempts.create_index('created_at', expireAfterSeconds=…)` when appropriate.",
+    "CallSettingsCard.js: softphone-extension-link should use rel='noopener noreferrer' and target='_blank' — please verify (was not inspected in this run)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_call_modes.py"
+  ],
+  "success_rate": {
+    "backend": "94% (15/16 new call-mode tests + 71/71 regression = 86/87; 1 legitimate failure on GET /api/users missing fields for legacy users; 1 intentional skip)",
+    "frontend": "100% of tested flows (dialer call-settings-card, mode switch, extension persistence after reload, problems section, Users page columns, add-user dialog, mobile viewport, telecaller self-service, 400-toast wording)"
+  },
+  "test_credentials": "Owner admin butbrucewill@gmail.com/admin123 + all 6 seeded pass123 users confirmed working. /app/memory/test_credentials.md accurate.",
+  "seed_data_creation": "Two live Smartflo attempts placed to 9810012301 (one desktop, one phone) — call_attempts rows are cleaned by teardown_module. Owner admin's call_mode/agent_extension/agent_number restored to phone mode with 9812345678 at end of tests. Caller1 briefly toggled to desktop mode during frontend test, then restored to phone.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Feature works end-to-end. ONE minor backend bug remains: GET /api/users omits call_mode/agent_extension keys for legacy users whose Mongo doc pre-dates the migration (test_users_list_returns_new_fields fails on caller2). If the main agent fixes by normalising defaults in list_users or by a one-off `update_many`, the same test should turn green. test_call_modes.py places 2 live Smartflo calls per run — either mark those two tests with pytest.mark.skip or run with `-k 'not live'` in CI to save cost. New tests import CREDS and client_for from conftest.py.",
+  "rca_of_the_issue": "The list_users endpoint returns raw MongoDB docs via serialize(); Pydantic models are not used to fill in schema defaults on the way out. Users created before the migration therefore have no `call_mode` / `agent_extension` fields in the DB and none appear in the API response. Reproduction: `curl -H 'Authorization: Bearer <admin>' $BASE/api/users | jq '.[] | select(.email==\"caller2@crm.com\") | keys'` — the two keys are absent. Fix: (a) in server.py list_users, transform each doc with `{**doc, 'call_mode': doc.get('call_mode') or 'phone', 'agent_extension': doc.get('agent_extension') or ''}` before serialize, OR (b) run `await db.users.update_many({'call_mode': {'$exists': False}}, {'$set': {'call_mode': 'phone', 'agent_extension': ''}})` on startup after seed_admin/seed_demo."
+}

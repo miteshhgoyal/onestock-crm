@@ -1,0 +1,707 @@
+[
+  {
+    "_id": {
+      "$oid": "6a9ff73d95e0c14c4f1faa80"
+    },
+    "name": "Artboard 1 (3) (1).png",
+    "stored_name": "841246865dc94cdbb5ecade273223cc3.png",
+    "content_type": "image/png",
+    "size": 1307888,
+    "owner_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-08T11:53:33.156Z"
+    },
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:05.275Z"
+    },
+    "is_deleted": true
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f71f223a4669adeacb29"
+    },
+    "name": "objstore_test.txt",
+    "stored_name": "c7c3a5f93aff49a4967f0d33a25b3eff.txt",
+    "content_type": "text/plain",
+    "size": 43,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:54:23.680Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/c7c3a5f93aff49a4967f0d33a25b3eff.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:54:24.229Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f78cd6c57ded67841e62"
+    },
+    "name": "hello.txt",
+    "stored_name": "88ca63052e284192b176f1d65c08dfef.txt",
+    "content_type": "text/plain",
+    "size": 32,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:12.433Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/88ca63052e284192b176f1d65c08dfef.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:06.473Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f78cd6c57ded67841e64"
+    },
+    "name": "pixel.png",
+    "stored_name": "ae16b9a1d4f14e02b433e49a02eaed33.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:12.822Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/ae16b9a1d4f14e02b433e49a02eaed33.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:07.085Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f78ed6c57ded67841e66"
+    },
+    "name": "todel.txt",
+    "stored_name": "4f38628e7d2a46909124f2a73dfb4f1b.txt",
+    "content_type": "text/plain",
+    "size": 3,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:14.682Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/4f38628e7d2a46909124f2a73dfb4f1b.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:56:14.749Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f78fd6c57ded67841e69"
+    },
+    "name": "owned.txt",
+    "stored_name": "236e6e6ee293410c8627f513ade0ebc9.txt",
+    "content_type": "text/plain",
+    "size": 5,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:15.473Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/236e6e6ee293410c8627f513ade0ebc9.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:04.346Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7ac739877dd43adca97"
+    },
+    "name": "hello.txt",
+    "stored_name": "8994c063edcb443db29d9e48442e68d2.txt",
+    "content_type": "text/plain",
+    "size": 32,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:44.242Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/8994c063edcb443db29d9e48442e68d2.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:04.049Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7ac739877dd43adca99"
+    },
+    "name": "pixel.png",
+    "stored_name": "3c3352546bb848fdbe1d6d706ae67601.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:44.565Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/3c3352546bb848fdbe1d6d706ae67601.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:07.840Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7ae739877dd43adca9b"
+    },
+    "name": "todel.txt",
+    "stored_name": "1c0696d28d0a4dfda7775c4c367d10b5.txt",
+    "content_type": "text/plain",
+    "size": 3,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:46.023Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/1c0696d28d0a4dfda7775c4c367d10b5.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:56:46.083Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7ae739877dd43adca9e"
+    },
+    "name": "owned.txt",
+    "stored_name": "28f40877f944402988925193be1fca84.txt",
+    "content_type": "text/plain",
+    "size": 5,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:56:46.841Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/28f40877f944402988925193be1fca84.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:01.958Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7af739877dd43adcaa0"
+    },
+    "name": "mine.txt",
+    "stored_name": "915093fd10f74f8fbfcaae1656202a5d.txt",
+    "content_type": "text/plain",
+    "size": 4,
+    "owner_id": {
+      "$oid": "6a87ee5e86662ab4c55b27c4"
+    },
+    "owner_name": "Amit Kumar",
+    "created_at": {
+      "$date": "2026-09-12T06:56:47.153Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ee5e86662ab4c55b27c4/915093fd10f74f8fbfcaae1656202a5d.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:56:47.217Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7bc739877dd43adcaa5"
+    },
+    "name": "hello.txt",
+    "stored_name": "59f95ad28e254c98a3e56267fe4dd1f5.txt",
+    "content_type": "text/plain",
+    "size": 32,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:57:00.281Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/59f95ad28e254c98a3e56267fe4dd1f5.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:50.543Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7bc739877dd43adcaa8"
+    },
+    "name": "pixel.png",
+    "stored_name": "6b5254a117bf44d684f37de481305191.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:57:00.714Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/6b5254a117bf44d684f37de481305191.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:08.605Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7be739877dd43adcaab"
+    },
+    "name": "todel.txt",
+    "stored_name": "3427c877565b4bd7a54af0a06576d957.txt",
+    "content_type": "text/plain",
+    "size": 3,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:57:02.601Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/3427c877565b4bd7a54af0a06576d957.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:57:02.671Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7bf739877dd43adcaae"
+    },
+    "name": "owned.txt",
+    "stored_name": "9de6c3e713f54db1b0020778c3afa94d.txt",
+    "content_type": "text/plain",
+    "size": 5,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:57:03.368Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/9de6c3e713f54db1b0020778c3afa94d.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:49.378Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f7bf739877dd43adcab2"
+    },
+    "name": "mine.txt",
+    "stored_name": "10b6b51914364007bb9dfca43cb71f8c.txt",
+    "content_type": "text/plain",
+    "size": 4,
+    "owner_id": {
+      "$oid": "6a87ee5e86662ab4c55b27c4"
+    },
+    "owner_name": "Amit Kumar",
+    "created_at": {
+      "$date": "2026-09-12T06:57:03.763Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ee5e86662ab4c55b27c4/10b6b51914364007bb9dfca43cb71f8c.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:57:03.825Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f81b739877dd43adcb44"
+    },
+    "name": "playwright_upload.txt",
+    "stored_name": "040bc01f403540ee9a5e6428892994e7.txt",
+    "content_type": "text/plain",
+    "size": 45,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T06:58:35.607Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/040bc01f403540ee9a5e6428892994e7.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T06:58:39.206Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4f87262808fc5fb2d59f3"
+    },
+    "name": "\u0928\u092e\u0938\u094d\u0924\u0947 report.txt",
+    "stored_name": "5c1deeb0f6da4525a40444c672fddaea.txt",
+    "content_type": "text/plain",
+    "size": 23,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:00:02.990Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/5c1deeb0f6da4525a40444c672fddaea.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T07:00:03.381Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4fe8e01d2bb68b13f39f6"
+    },
+    "name": "hello.txt",
+    "stored_name": "5d88aeec4c4a451a9c62033b8e676687.txt",
+    "content_type": "text/plain",
+    "size": 32,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:26:06.705Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/5d88aeec4c4a451a9c62033b8e676687.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:01.158Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4fe8f01d2bb68b13f39fb"
+    },
+    "name": "pixel.png",
+    "stored_name": "9c894f3d683642128dd4c6e35735c2b8.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:26:07.084Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/9c894f3d683642128dd4c6e35735c2b8.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:48.636Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4fe9101d2bb68b13f3a07"
+    },
+    "name": "todel.txt",
+    "stored_name": "a409fec1ff444b71b3baefae2e2c8d79.txt",
+    "content_type": "text/plain",
+    "size": 3,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:26:09.039Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/a409fec1ff444b71b3baefae2e2c8d79.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T07:26:09.104Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4fe9101d2bb68b13f3a0a"
+    },
+    "name": "owned.txt",
+    "stored_name": "6e419f8a02584e2f9a2c0f3a93d68a81.txt",
+    "content_type": "text/plain",
+    "size": 5,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:26:09.818Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/6e419f8a02584e2f9a2c0f3a93d68a81.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:34:00.349Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4fe9201d2bb68b13f3a0e"
+    },
+    "name": "mine.txt",
+    "stored_name": "058a65160eba402e9d397427bfdb0d83.txt",
+    "content_type": "text/plain",
+    "size": 4,
+    "owner_id": {
+      "$oid": "6a87ee5e86662ab4c55b27c4"
+    },
+    "owner_name": "Amit Kumar",
+    "created_at": {
+      "$date": "2026-09-12T07:26:10.172Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ee5e86662ab4c55b27c4/058a65160eba402e9d397427bfdb0d83.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T07:26:10.238Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff4fc2920edb94faace0"
+    },
+    "name": "pixel.png",
+    "stored_name": "acdc26d22a1743e2a02bcf965a21fad5.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:19.095Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/acdc26d22a1743e2a02bcf965a21fad5.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:47.010Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff55c2920edb94faace2"
+    },
+    "name": "pixel.png",
+    "stored_name": "b7914a9b48874bdca67cca02baa23364.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:25.296Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/b7914a9b48874bdca67cca02baa23364.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:46.170Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff5dc2920edb94faace4"
+    },
+    "name": "hello.txt",
+    "stored_name": "67e9a7a417bb4e13a5c65b30e0bebd31.txt",
+    "content_type": "text/plain",
+    "size": 32,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:33.221Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/67e9a7a417bb4e13a5c65b30e0bebd31.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:45.301Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff5dc2920edb94faace6"
+    },
+    "name": "pixel.png",
+    "stored_name": "c1b966be4a564efbab8f7f8cb0882b2e.png",
+    "content_type": "image/png",
+    "size": 68,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:33.559Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/c1b966be4a564efbab8f7f8cb0882b2e.png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:44.459Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff5fc2920edb94faace8"
+    },
+    "name": "todel.txt",
+    "stored_name": "0f8b5c5ab22940bd8a2315dc734a27c5.txt",
+    "content_type": "text/plain",
+    "size": 3,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:35.073Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/0f8b5c5ab22940bd8a2315dc734a27c5.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T07:29:35.138Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff60c2920edb94faaceb"
+    },
+    "name": "owned.txt",
+    "stored_name": "c3195fe371a04b3bad4181787927cad3.txt",
+    "content_type": "text/plain",
+    "size": 5,
+    "owner_id": {
+      "$oid": "6aa4f50d66ac686a287545e2"
+    },
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-12T07:29:36.352Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aa4f50d66ac686a287545e2/c3195fe371a04b3bad4181787927cad3.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:42.671Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa4ff60c2920edb94faaced"
+    },
+    "name": "mine.txt",
+    "stored_name": "e3632c216dac40699fca727ee8e45739.txt",
+    "content_type": "text/plain",
+    "size": 4,
+    "owner_id": {
+      "$oid": "6a87ee5e86662ab4c55b27c4"
+    },
+    "owner_name": "Amit Kumar",
+    "created_at": {
+      "$date": "2026-09-12T07:29:36.707Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ee5e86662ab4c55b27c4/e3632c216dac40699fca727ee8e45739.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-12T07:29:36.767Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa7cd09d869cc2a90a3ffe0"
+    },
+    "name": "health.txt",
+    "stored_name": "6aa7cd09d869cc2a90a3ffdf-health.txt",
+    "content_type": "text/plain",
+    "size": 47,
+    "owner_id": "6a87ed1422a0b48ca1e01d23",
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-14T10:31:37.387Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ed1422a0b48ca1e01d23/6aa7cd09d869cc2a90a3ffdf-health.txt",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:31:54.724Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa7cd44d869cc2a90a3ffe2"
+    },
+    "name": "Artboard 1 (3) (1) (1).png",
+    "stored_name": "6aa7cd44d869cc2a90a3ffe1-Artboard 1 (3) (1) (1).png",
+    "content_type": "image/png",
+    "size": 1307888,
+    "owner_id": "6a87ee5e86662ab4c55b27c4",
+    "owner_name": "kapil ",
+    "created_at": {
+      "$date": "2026-09-14T10:32:36.915Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ee5e86662ab4c55b27c4/6aa7cd44d869cc2a90a3ffe1-Artboard 1 (3) (1) (1).png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-14T10:33:06.239Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aabdde319c75f22e6c1705a"
+    },
+    "name": "Screenshot (1).png",
+    "stored_name": "6aabdde219c75f22e6c17059-Screenshot (1).png",
+    "content_type": "image/png",
+    "size": 356557,
+    "owner_id": "6aab91900921e97e7e762ad4",
+    "owner_name": "Shahmina",
+    "created_at": {
+      "$date": "2026-09-17T12:32:35.547Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6aab91900921e97e7e762ad4/6aabdde219c75f22e6c17059-Screenshot (1).png",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-17T12:32:39.633Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aae214d5e55ae37763ff491"
+    },
+    "name": "Capture.PNG",
+    "stored_name": "6aae214d5e55ae37763ff490-Capture.PNG",
+    "content_type": "image/png",
+    "size": 4502,
+    "owner_id": "6a87ed1422a0b48ca1e01d23",
+    "owner_name": "System Admin",
+    "created_at": {
+      "$date": "2026-09-19T05:44:45.870Z"
+    },
+    "storage_path": "onestock-academy-crm/documents/6a87ed1422a0b48ca1e01d23/6aae214d5e55ae37763ff490-Capture.PNG",
+    "is_deleted": true,
+    "deleted_at": {
+      "$date": "2026-09-19T05:44:54.153Z"
+    }
+  }
+]

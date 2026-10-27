@@ -1,0 +1,220 @@
+[
+  {
+    "_id": {
+      "$oid": "6a9fe48893736d72e0dae115"
+    },
+    "text": "het GANG",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-08T10:33:44.121Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a9fe4f395e0c14c4f1fa8c1"
+    },
+    "text": "yo",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-08T10:35:31.282Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a9fe50c95e0c14c4f1fa8c2"
+    },
+    "text": "have fun today is no work yayyyyy",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-08T10:35:56.844Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a9fe8e395e0c14c4f1faa38"
+    },
+    "text": "new leads assigned",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-08T10:52:19.615Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a9fe8fe95e0c14c4f1faa39"
+    },
+    "text": "hey every one\n\n\n\n\n\n\n\n\n\n\n\ncome to meating\\",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-08T10:52:46.157Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a9ff78795e0c14c4f1faa82"
+    },
+    "text": "my team is on break",
+    "sender_id": {
+      "$oid": "6a87ee5c86662ab4c55b27c2"
+    },
+    "sender_name": "Rahul Menon",
+    "sender_role": "team_leader",
+    "team_id": {
+      "$oid": "6a87ee5a86662ab4c55b27bf"
+    },
+    "created_at": {
+      "$date": "2026-09-08T11:54:47.296Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aa7e53b3d8b0ae6df73cc7e"
+    },
+    "text": "bro where is my team",
+    "sender_id": {
+      "$oid": "6a87ee5c86662ab4c55b27c2"
+    },
+    "sender_name": "Rahul Menon",
+    "sender_role": "team_leader",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-14T12:14:51.872Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aabddf67e04138b75b6c10f"
+    },
+    "text": "team alpha",
+    "sender_id": {
+      "$oid": "6aab91900921e97e7e762ad4"
+    },
+    "sender_name": "Shahmina",
+    "sender_role": "team_leader",
+    "team_id": {
+      "$oid": "6a87ee5a86662ab4c55b27bf"
+    },
+    "created_at": {
+      "$date": "2026-09-17T12:32:54.954Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aae21675e55ae37763ff492"
+    },
+    "text": "hey guys how its going",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-19T05:45:11.193Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aae21df5e55ae37763ff493"
+    },
+    "text": "hewlo",
+    "sender_id": {
+      "$oid": "6aab91900921e97e7e762ad4"
+    },
+    "sender_name": "Shahmina",
+    "sender_role": "team_leader",
+    "team_id": {
+      "$oid": "6a87ee5a86662ab4c55b27bf"
+    },
+    "created_at": {
+      "$date": "2026-09-19T05:47:11.389Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6aae22bb5e55ae37763ff496"
+    },
+    "text": "hey are you guys up",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-09-19T05:50:51.626Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6abcc05e6e370476ab12853f"
+    },
+    "text": "hi",
+    "sender_id": {
+      "$oid": "6aab91900921e97e7e762ad4"
+    },
+    "sender_name": "Shahmina",
+    "sender_role": "team_leader",
+    "team_id": {
+      "$oid": "6a87ee5a86662ab4c55b27bf"
+    },
+    "created_at": {
+      "$date": "2026-09-30T07:55:10.129Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6ac5f40c6a775e7519228cf0"
+    },
+    "text": "hey 1 2 3 4 check",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-10-07T07:26:04.072Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6ac5f51e6a775e7519228d01"
+    },
+    "text": "de235127e8eb5a41fa0da728f9f6b96820dd0df255b56710",
+    "sender_id": {
+      "$oid": "6a87ed1422a0b48ca1e01d23"
+    },
+    "sender_name": "System Admin",
+    "sender_role": "admin",
+    "team_id": null,
+    "created_at": {
+      "$date": "2026-10-07T07:30:38.711Z"
+    }
+  }
+]

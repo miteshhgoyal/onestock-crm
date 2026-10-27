@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 2 testing of the three new requests (brand/logo rebrand, Asia/Kolkata 'due today' buckets, filtered CSV export) plus regression of iteration_1 fixes. Added /app/backend/tests/test_export_tz.py (19 new pytest cases). Full backend suite now 71/71 PASSED (52 existing + 19 new), including the two iteration_1 defects (call-note escalation, email-keyed lockout) which are now fixed. Export verified: text/csv + attachment Content-Disposition, exact 14-column header, row counts equal GET /api/leads totals for status=converted, bucket=today/escalated/unassigned, source=whatsapp and q=<partial name>; team-leader export is team-scoped and smaller than admin's; telecaller gets 403; unauthenticated 401; Created At rendered in IST (+5:30 vs API created_at). IST bucket edges verified by creating 4 leads and PATCHing next_follow_up_at to 00:30 IST today, 23:30 IST today, 00:30 IST tomorrow, 23:30 IST yesterday - only the two 'today' leads appear in bucket=today and in the export, and GET /api/reports/dashboard due_today equals the bucket total. Frontend: page title 'Onestock Academy | CRM', login page shows wordmark + brand-logo-mark, teal (rgb(0,224,198)) primary button and active nav uses bg-brand, sidebar logo present, no console errors. Export CSV button visible + downloads a file + 'Export downloaded' toast for admin, sub-admin AND team leader; telecaller is redirected to /workspace and never sees it. Regressions all pass: 4-role login/routing, leads buckets (today 4/escalated 2/unassigned 10/all 34), status filter, search, prev/next pagination controls present, workspace queue tabs + note + status + shadcn follow-up picker persisted to DB, dashboard/reports/activity/users/teams all render.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/leads/export", "issue": "Hard 5000-row cap is silent - a tenant with >5000 matching leads gets a truncated CSV with no warning header or count. Consider streaming with a cursor or returning a 'truncated' indicator."},
+      {"endpoint": "GET /api/leads/export", "issue": "local() helper does value.replace(tzinfo=utc) unconditionally; if a client ever stores a tz-aware datetime through Mongo this is fine, but any naive non-UTC value would be silently mislabelled. Also the helper is redefined inside the per-row loop (move it out)."},
+      {"endpoint": "CORS (informational)", "issue": "App-level config is correct (explicit origins from CORS_ORIGINS + allow_credentials, verified on localhost:8001). The preview edge/Cloudflare rewrites Access-Control-Allow-Origin to '*' on the public URL, so public-URL CORS assertions cannot validate the app config. No action needed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Leads.js header / sonner toast", "issue": "The success toast renders in the top-right and overlaps the header action buttons (Import CSV / Auto assign / New lead are covered while the toast is visible). Offset the toaster or move the actions.", "selector": "[data-testid=\"export-csv-button\"]", "priority": "LOW"},
+      {"component": "LeadPanel follow-up date picker", "issue": "Calendar allows selecting past dates (picked 5 Aug while today is 21 Aug and it saved 'Next follow-up 05 Aug, 10:00 am'), which immediately drops the lead into the Missed follow-ups bucket. Add disabled={{ before: today }} to the shadcn Calendar.", "selector": "[data-testid=\"followup-date-button\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Recharts still logs 'The width(-1) and height(-1) of chart should be greater than 0' 4x on first mount despite minWidth/minHeight on ResponsiveContainer - the parent uses height:100% so the first layout pass is still 0. Give the chart wrapper a fixed px height (e.g. h-[240px]) instead of relying on ResponsiveContainer minHeight."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_export_tz.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [
+    "LOW: offset the toaster so the 'Export downloaded' toast does not cover the leads header buttons.",
+    "MEDIUM: disable past dates in the follow-up Calendar in LeadPanel.",
+    "LOW: give the dashboard chart wrappers a fixed pixel height to silence the recharts width(-1)/height(-1) warnings."
+  ],
+  "critical_code_review_comments": [
+    "export_leads(): the nested local() closure is re-created for every row and the 5000-row cap is undocumented in the API/UI - the manager silently gets a partial file.",
+    "build_lead_query() being shared by /leads and /leads/export is the right refactor; note the q filter builds an $and list that would be clobbered if another $and consumer is added later.",
+    "local_day_bounds() is correct (IST midnight/23:59:59.999999 converted to UTC); make sure any future 'overdue'/'inactive' logic uses the same helper - overdue still compares against raw utcnow(), which is fine but keep it consistent.",
+    "server.py is now 778 lines; split into routers (auth/leads/reports) before the next feature."
+  ],
+  "updated_files": ["/app/backend/tests/test_export_tz.py"],
+  "success_rate": {"backend": "100% (71/71 pytest cases)", "frontend": "100% of tested flows (brand/logo, export for 3 roles, 4-role login/routing, leads buckets/filters/search/pagination, workspace note+status+follow-up, dashboard/reports/activity/users/teams)"},
+  "seed_data_creation": "All artifacts prefixed TEST_ / test_ were removed after the run (20 leads, 4 users, 1 team deleted; login_attempts cleared). 14 seeded demo leads remain; run `python /app/backend/seed_demo.py` if pristine demo data is needed.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md is accurate; all 7 accounts log in, bcrypt hashes are $2b$, login sets httpOnly access_token+refresh_token cookies, lockout now engages deterministically on the 6th failed attempt (401x5 then 429).",
+  "context_for_next_testing_agent": "Backend regression suite: /app/backend/tests/ (conftest.py, backend_test.py 52 cases, test_export_tz.py 19 cases) - run `cd /app/backend && python -m pytest tests/ -q`. pytest.ini forces -n 2 --dist loadscope. CRM_TEST_CLEANUP=1 gates the cleanup fixture in backend_test.py; test_export_tz.py cleans its own IST leads. Note: public-URL CORS preflight is rewritten to '*' by the preview edge, so the CORS test asserts against http://localhost:8001. Frontend testids: bucket tabs are data-testid=bucket-{all|today|overdue|unassigned|escalated|inactive}, workspace tabs workspace-tab-{today|overdue|all}, note input lead-note-input, save lead-save-button, export export-csv-button.",
+  "rca_of_the_issue": "No functional defects found this round. Recharts warning persists because ResponsiveContainer height='100%' resolves to 0 on the first layout pass; minHeight only constrains the SVG afterwards. Follow-up picker allows past dates because no `disabled` matcher is passed to the shadcn Calendar."
+}

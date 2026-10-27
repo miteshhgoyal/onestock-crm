@@ -1,0 +1,60 @@
+{
+  "summary": "First full test run of the Small Team CRM (backend + frontend). Created a pytest regression suite (52 tests) covering auth/JWT/cookies/lockout, RBAC for all 4 roles, lead CRUD + duplicate-by-phone, filters/buckets/pagination, manual assign, round-robin auto-assign, CSV import, public webhook intake, 12h escalation + cron endpoint, reports/dashboard/performance, activities, users & teams management. 50/52 passed. Frontend Playwright runs covered login for all 4 roles + role routing + route guards, telecaller workspace (queue tabs, call note, status change, shadcn follow-up date/hour picker, persistence after reload), admin leads page (6 buckets, 3 filters, search, new-lead dialog, row select + bulk assign, CSV import, auto-assign, lead drawer/panel), users & teams CRUD (create user, toggle active, team assign, create team), dashboard KPIs + charts + run-escalation button + KPI drill-down, reports (admin/sub-admin/team-leader scoping) and activity log. All frontend flows passed; 2 genuine backend defects found.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/escalation/run (run_escalation)", "issue": "Escalation ignores call notes. run_escalation() selects on {status:'assigned', assigned_at < now-12h} only, so a lead where the telecaller logged a call note (status left on 'assigned') is still escalated + reassigned. Spec is 'no status update AND no call note = no action'. Reproduced by tests/backend_test.py::TestEscalation::test_lead_with_call_note_is_not_escalated. Fix: also require last_action_at to be older than the cutoff, e.g. {'$or':[{'last_action_at':None},{'last_action_at':{'$lt':cutoff}}]}.", "priority": "HIGH"},
+      {"endpoint": "POST /api/auth/login (brute-force lockout)", "issue": "Lockout identifier is f\"{request.client.host}:{email}\" - behind the k8s ingress request.client.host is the proxy pod IP and rotates, so the counter is partitioned across IPs. Observed 15 consecutive bad-password attempts returning [401 x7, 429, 429, 429, 401, 429, 401, 429, 401] i.e. lock never engages deterministically at 5 and 401s keep flowing through. Key the counter by email (optionally + X-Forwarded-For) and reset count once the lock window expires (currently count is never reset, so an account re-locks on the very next failure forever).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "CORS middleware", "issue": "allow_origin_regex='.*' combined with allow_credentials=True is a wildcard-with-credentials configuration; playbook requires explicit origins (preview URL + localhost)."},
+      {"endpoint": "DELETE /api/users/{id}", "issue": "Gated by require_perm(user,'lead:delete') instead of 'user:manage'. Sub-admin (who is allowed to manage telecallers/team leaders) gets 403 on this endpoint; only admin can call it. Wrong permission key."},
+      {"endpoint": "GET /api/leads", "issue": "bucket=today uses now.replace(hour=0..)/replace(hour=23..) on a UTC 'now', so 'due today' is a UTC day, not the team's local day - Indian evening follow-ups can fall in the wrong bucket."},
+      {"endpoint": "No DELETE /api/leads/{id}", "issue": "'lead:delete' permission exists but there is no lead delete/archive endpoint, so bad/duplicate leads cannot be removed via API."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "LeadDrawer / dialogs (radix Sheet+Dialog)", "issue": "Console error on every open: 'DialogContent requires a DialogTitle for the component to be accessible for screen reader users'. Add a (visually hidden) SheetTitle/DialogTitle.", "selector": "[data-testid=\"lead-drawer\"]", "priority": "LOW"},
+      {"component": "Leads.js", "issue": "No pagination control although the API is paged (limit=50). Once the pipeline exceeds 50 leads the rest are unreachable from the UI (total is displayed but page cannot be changed).", "selector": "[data-testid=\"leads-table\"]", "priority": "MEDIUM"},
+      {"component": "Leads.js filters", "issue": "Search text (q) and status/source filters persist when switching bucket tabs, so 'Unassigned/Escalated' can silently show 0 rows while a stale search is active. Consider clearing q or showing an active-filter chip.", "selector": "[data-testid=\"lead-search-input\"]", "priority": "LOW"},
+      {"component": "LeadPanel activity section", "issue": "When a lead has no activity rows the 'Activity' heading renders with an empty body (no empty-state text), unlike Call notes which has one.", "selector": "[data-testid=\"lead-activity-list\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Recharts logs 'The width(-1) and height(-1) of chart should be greater than 0' 4x on first mount - ResponsiveContainer has no minWidth/minHeight; charts do render after layout but the initial frame is empty."]},
+      {"screen": "Leads filter selects", "issues": ["SelectItem options inside filter-status / filter-source / filter-assignee have no data-testid (only bulk-assign and status/reassign options do); tests must fall back to role=option text matching."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix run_escalation() to treat a call note as activity (filter on last_action_at, not only assigned_at/status).",
+    "Fix login lockout identifier (email-based, not proxy client IP) and reset the counter when the 15-min window expires.",
+    "Replace CORS allow_origin_regex='.*' with explicit allowed origins while keeping allow_credentials.",
+    "Change DELETE /api/users/{id} permission from 'lead:delete' to 'user:manage'.",
+    "Add pagination controls to the Leads table (API already returns total/page).",
+    "Add SheetTitle/DialogTitle (visually hidden) to LeadDrawer to clear the radix a11y error."
+  ],
+  "critical_code_review_comments": [
+    "run_escalation(): the 12h rule only inspects status+assigned_at; a telecaller who logs a call note without changing status is still punished. Use max(assigned_at, last_action_at) as the idle marker.",
+    "login(): db.login_attempts key uses request.client.host which is the ingress IP behind k8s; brute-force protection is effectively bypassable and non-deterministic. Also count is never zeroed after lock expiry.",
+    "delete_user() uses require_perm(user, 'lead:delete') - copy/paste permission mismatch with the documented 'sub-admin manages telecallers/team leaders' rule.",
+    "GET /api/leads bucket=today/overdue computes day boundaries in UTC; for an India-based calling team the 'Due today' queue will roll over at 05:30 IST.",
+    "next_telecaller() increments a single shared db.settings counter per call, and when exclude filters the list the modulo index shifts - distribution is fair enough but not strictly round-robin per telecaller; acceptable for MVP, worth a comment.",
+    "server.py is 715 lines and already mixes auth, leads, reports, escalation and cron routes - split into routers before it grows further."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "96% (50/52 pytest cases)", "frontend": "100% of tested flows (login/routing/workspace/leads/users/teams/reports/activity) passed"},
+  "seed_data_creation": "All API/UI test artifacts were prefixed TEST_ (leads/teams) or test_ (user emails) and deleted after the run (36 leads, 7 users, 3 teams removed; login_attempts cleared). NOTE: clicking the UI 'Auto assign' button reassigned the 12 seeded demo leads across telecallers and 2 seeded leads (Ishita Shah / Tarun Chopra) are now escalated=true - seeded lead ownership differs from seed_demo.py output. Re-run `python /app/backend/seed_demo.py` if pristine demo data is required.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "/app/memory/test_credentials.md is complete and all 7 accounts log in successfully (admin@crm.com/admin123, subadmin|leader1|leader2|caller1|caller2|caller3 /pass123). bcrypt hashes verified as $2b$ format; login sets httpOnly access_token+refresh_token cookies.",
+  "context_for_next_testing_agent": "Regression suite lives at /app/backend/tests/ (conftest.py + backend_test.py, 52 tests, run with `cd /app/backend && python -m pytest tests/ -v`). pytest.ini forces -n 2 --dist loadscope; the DB cleanup fixture is intentionally gated behind CRM_TEST_CLEANUP=1 because per-worker cleanup deleted rows another worker was still using - run cleanup manually after the suite. Two tests are expected to FAIL until the developer fixes the defects: TestAuth::test_brute_force_lockout (IP-partitioned lockout) and TestEscalation::test_lead_with_call_note_is_not_escalated (escalation ignores call notes). Everything else (RBAC for 4 roles, duplicate phone 409, CSV import counts 1/1/1, intake key 401/duplicate, round-robin spread, cron 401/200, reports scoping, users/teams CRUD) passes both on API and UI. Frontend data-testids are complete for every flow tested; only the leads filter SelectItems lack testids.",
+  "rca_of_the_issue": "Escalation: run_escalation() query = {status:'assigned', assigned_to != None, assigned_at < now-12h}. add_note() updates notes/last_action_at/escalated but does not touch status or assigned_at, so any lead whose telecaller logged a note yet left the stage on 'assigned' still matches the stale query and is escalated + reassigned (reproduced: TEST_Noted lead, note added, escalation run -> escalated=true, owner changed). Lockout: identifier embeds request.client.host; the preview ingress sends requests from multiple proxy pod IPs (observed 10.79.139.10 and 10.79.139.11 in db.login_attempts), splitting the 5-strike counter across identifiers, so a client keeps getting 401s past the threshold and the lock engages non-deterministically."
+}

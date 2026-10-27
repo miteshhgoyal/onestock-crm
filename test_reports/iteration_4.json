@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 4 verified BOTH the Emergent Object Storage document migration (NEW) and the Smartflo click-to-call fix (regression). Backend: added /app/backend/tests/test_documents.py (14 pytest cases, all PASS) covering upload->object storage (storage_path='onestock-academy-crm/documents/<user_id>/<uuid>.ext', is_deleted:false, NO new file on pod disk in /app/backend/uploads/documents), text + PNG round-trip integrity (byte-identical, correct Content-Type, Content-Disposition attachment), 400 for unsupported .exe, 413 for >15MB, 401 for unauth on list/upload/download/delete, soft-delete (returns {ok:true}, disappears from list, download 404, Mongo record kept with is_deleted:true+deleted_at), telecaller 403 on someone else's doc but 200 on their own upload, legacy fallback (pre-migration DB record with storage_path:null and stored_name='841246865dc94cdbb5ecade273223cc3.png' still downloads 1.3MB PNG via FileResponse from disk), startup log 'Object storage initialized' present, and Smartflo diagnostics/short-dest 400/no-agent 400. FULL regression: 105/105 pytest PASS (14 new documents + 20 smartflo incl. ONE live paid Smartflo call which returned success:true with a real call_id, + 71 backend_test.py/test_export_tz.py covering auth for owner admin/legacy admin/6 seeded users, leads CRUD/buckets/filters, CSV export, CSV import, auto round-robin, telecaller workspace note/status/follow-up, dashboard, reports, activity log, escalation, CORS, intake, brute-force lockout, IST timezone buckets). Frontend: logged in as owner admin butbrucewill@gmail.com/admin123, opened /documents (data-testid=documents-page, documents-list visible), uploaded playwright_upload.txt via data-testid=document-file-input, row rendered with size + owner (System Admin), clicked Download aria-label='Download playwright_upload.txt' -> browser download event fired with suggested_filename='playwright_upload.txt', clicked Delete aria-label='Delete playwright_upload.txt' -> row removed, 'Document deleted' toast, zero console errors. Legacy Artboard 1 (3) (1).png still renders in the list.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_documents.py",
+    "/app/backend/tests/test_smartflo.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_export_tz.py",
+    "/app/test_reports/pytest/iteration4_documents.xml",
+    "/app/test_reports/pytest/iteration4_all.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 1143 lines - still growing (documents + object storage plumbing added). Split into routers (auth, leads, calls, documents, chat) before the next feature to keep it maintainable.",
+    "storage.py uses the synchronous `requests` library while the rest of the backend is httpx/motor async - the run_in_threadpool wrapper is correct, but consider switching to httpx.AsyncClient for consistency and to reuse connection pooling.",
+    "storage.storage_key is a module-level global mutated without a lock; safe today because init_storage is idempotent, but flag for future concurrency work (e.g. multiple workers behind a shared cache).",
+    "upload_document reads the whole UploadFile into memory before checking size (file.read() then len check). For 15 MB max that is fine, but the 413 path only fires AFTER the entire body is buffered - consider a streaming size check or FastAPI file size middleware to reject early.",
+    "download_document swallows every storage exception into a generic 404 ('Document file not found') - a 502/503 with the underlying reason would be more diagnosable when the object store is degraded.",
+    "delete_document is a soft delete only (correct - object storage has no delete API), but there is no cleanup job / retention policy for stale is_deleted:true blobs; storage cost will grow unbounded.",
+    "Content-Disposition on the object-storage path is built with a naive f-string and no filename* fallback, so non-ASCII filenames will break. FileResponse (legacy branch) does this correctly - port the same logic to the object-storage branch.",
+    "call_attempts collection still has no TTL/index on created_at (flagged in iteration_3, not addressed)."
+  ],
+  "updated_files": ["/app/backend/tests/test_documents.py"],
+  "success_rate": {"backend": "100% (105/105 pytest: 14 new documents + 20 smartflo + 71 pre-existing regression)", "frontend": "100% of tested Documents flows (upload, list-with-size+owner, download blob, delete + toast, no console errors)"},
+  "test_credentials": "/app/memory/test_credentials.md is accurate and current.",
+  "seed_data_creation": "Test uploads created ~13 small docs during backend + frontend runs, all owned by owner admin/caller1. Soft-deleted ones stay in mongo.documents with is_deleted:true (by design - no object storage delete API). ONE live Smartflo call fired via test_smartflo.py to 9810012301 (audit row in mongo.call_attempts, cleaned by teardown_module).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Docs tests live in /app/backend/tests/test_documents.py; they DO create real objects in Emergent Object Storage under path onestock-academy-crm/documents/<user_id>/. The legacy fallback test discovers a pre-migration doc by querying {storage_path:null, is_deleted:{$ne:true}} - keep at least one file in /app/backend/uploads/documents (currently 841246865dc94cdbb5ecade273223cc3.png = 'Artboard 1 (3) (1).png') and its DB record intact or this test will fail. Smartflo live-call fixture places ONE real paid call per full test_smartflo.py run to +919810012301. Skip with `pytest -k 'not live_call_result and not click_to_call_success_response and not persists_audit and not writes_lead_activity'`. Note: `caller1`/other conftest sessions preset Content-Type: application/json - when uploading files, build a fresh headers dict with only Authorization (see test_telecaller_can_delete_own_doc).",
+  "rca_of_the_issue": "N/A - both the object-storage migration and the earlier Smartflo .env fix are verified green in this run."
+}

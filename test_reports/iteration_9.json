@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 9: Verified all 6 asks — auto-escalation stopped (crons.yml enabled:false, Dashboard has no run-escalation-button, POST /api/cron/escalate-leads still reachable), Actionless-24h backend bucket + dashboard totals, Actionless-24h UI visible only to admin/subadmin (bucket-actionless tab + kpi-actionless card link to /leads?bucket=actionless) and hidden for team_leader + telecaller, team-leader self-assign works (leader appears in assignee list labelled '(me)' and can POST /api/leads/assign with own id then reassign back), Deselect all + Unassign bulk buttons present after row select, POST /api/leads/unassign returns 200 for leader/admin and 403 for telecaller. 5/5 pytest tests pass; frontend Playwright checks all green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_actionless_and_unassign.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~2131 lines — still exceeds 700-line guideline; recommend splitting into routers (auth/users/leads/calls/reports/exports).",
+    "GET /api/calls/smartflo-webhook still exposed via api_route alongside POST (flagged in earlier iterations; still unresolved).",
+    "unassign_leads() clears team_id but leaves the lead without team scoping — an unassigned lead is invisible to the team_leader who unassigned it (they must ask admin to re-scope). Consider preserving team_id on unassign so leaders can still see their team's unassigned pool.",
+    "Actionless bucket condition uses notes: {$size: 0}. If a lead has zero notes but has other activity (calls/status changes) it will still show up. Verify with product whether 'actionless' should be driven by activity log rather than notes only."
+  ],
+  "updated_files": ["/app/backend/tests/test_actionless_and_unassign.py"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "admin@crm.com / admin123; qa.leader@crmtest.com / pass123; qa.caller@crmtest.com / pass123",
+  "seed_data_creation": "None — leader self-assign test mutated one team lead and restored to original assignee in finally block.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New pytest suite at /app/backend/tests/test_actionless_and_unassign.py covers bucket, dashboard totals, cron reachability, leader self-assign + unassign RBAC. Leader user list contains the leader themselves — validated. Actionless bucket relies on notes empty AND last_action_at >24h AND status not in converted/lost/not_interested — verify count with product before adding stricter conditions.",
+  "rca of the issue": "N/A — all targeted scenarios passed."
+}

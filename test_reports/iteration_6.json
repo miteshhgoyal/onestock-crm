@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 6 verifies the three iter5 fixes and completes the previously-skipped per-request override live-call cases. All 3 fixes GREEN. (1) GET /api/users normalisation: list_users() now emits call_mode (default 'phone') and agent_extension (default '') for every row; test_users_list_returns_new_fields PASSES (previously the only red test). Mongo confirms 0/18 user docs lack call_mode after the startup update_many migration. (2) Non-numeric extension rejection: PATCH /api/calls/preferences {call_mode:'desktop', agent_extension:'1024a'} then POST /api/calls/click-to-call returns 400 with 'Your Smartflo extension must be digits only (e.g. 1024)' and writes NO call_attempts row — Tata is not called. Clean '1024' still dials. (3) Transport-error audit branch: code inspection of /app/backend/server.py lines 703-715 confirms the httpx exception insert now includes call_mode alongside agent_number/destination_number, matching the success branch at 728-736. Per-request override live calls (2/2 budget used, both to 9810012301): (a) stored=desktop+ext=1024, body call_mode='phone' -> audit row call_mode='phone', agent_number='919812345678'; (b) stored=phone, body call_mode='desktop' -> audit row call_mode='desktop', agent_number='1024'. Both PASS. Regression: test_call_modes.py 17 pass + 2 intentional skips (previous unbudgeted live tests); backend_test.py + test_export_tz.py 71/71 pass; test_smartflo.py non-live 17/17 pass (live-call tests deselected via -k filter: live_call_result / test_click_to_call_success_response / test_click_to_call_normalises_number_and_persists / test_click_to_call_writes_lead_activity); test_documents.py 12/13 pass with ONE test-only assertion mismatch (RFC 5987 filename* vs plain filename=, endpoint works — pre-existing brittleness, unrelated to this iteration). Frontend smoke (owner butbrucewill@gmail.com, 1920x1080 + 390x844): call-settings-card renders on /dialer, call-mode-desktop / call-mode-phone switch, call-settings-extension persists =1024 after full reload, softphone-extension-link href=https://chromewebstore.google.com/detail/smartflo-softphone/dbhcchccbhpnohpmcallfdfcfnogdfpo rel='noopener noreferrer' target=_blank, /users shows 21 user-call-mode-* + 21 user-agent-extension-* testids, no horizontal overflow at 390px (scrollWidth==clientWidth==390).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/documents/{id}/download", "issue": "test_documents.py::test_upload_binary_png_and_download_roundtrip asserts Content-Disposition contains filename=\"pixel.png\" but FastAPI/Starlette now emits RFC 5987 form filename*=UTF-8''pixel.png. Endpoint is functionally correct; test assertion is brittle. Pre-existing, unrelated to iter6 fixes."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_call_modes.py",
+    "/app/test_reports/pytest/iter6_callmodes.xml",
+    "/app/test_reports/pytest/iter6_regression.xml",
+    "/app/test_reports/pytest/iter6_smartflo.xml"
+  ],
+  "action_items": [
+    "(Minor, optional) Update test_documents.py::test_upload_binary_png_and_download_roundtrip to accept either filename=\"pixel.png\" OR filename*=UTF-8''pixel.png so it survives Starlette upgrades. Not a product bug."
+  ],
+  "critical_code_review_comments": [
+    "click_to_call transport-error insert (server.py 703-715) now includes call_mode — good, matches success branch.",
+    "list_users normalises defaults in-response AND startup update_many backfills DB — belt-and-braces, good. Note: 2 docs still lack agent_extension key in raw DB (call_mode was set by migration but agent_extension defaulting is only in the response layer if the field predates the migration but call_mode was already present). Cosmetic only; API is consistent. Consider tightening the migration filter to `$or: [{call_mode: {$exists: false}}, {agent_extension: {$exists: false}}]`.",
+    "server.py still ~1219 lines — router extraction (routers/calls.py, routers/users.py) remains an accepted backlog item per user's 'don't change so much' guidance.",
+    "PATCH /api/calls/preferences still allows self-service agent_number update. Not raised by the request, but worth an explicit product decision."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_call_modes.py (added test_nonnumeric_extension_rejected_at_dial + two per-request override tests; skipped the two prior unconditional live tests to respect the 2-call budget)"
+  ],
+  "success_rate": {
+    "backend": "100% on iter6-scoped tests (17/17 call_modes non-skipped, 71/71 backend+export_tz, 17/17 non-live smartflo); test_documents 12/13 with 1 pre-existing brittle assertion",
+    "frontend": "100% of tested flows (call-settings-card, mode switch, extension persistence, softphone link attrs, /users columns, mobile viewport)"
+  },
+  "test_credentials": "Owner butbrucewill@gmail.com/admin123 + seeded pass123 users; /app/memory/test_credentials.md accurate.",
+  "seed_data_creation": "Two live Smartflo calls placed to 9810012301 for the override cases; owner reset to call_mode=phone, agent_extension='', agent_number=9812345678 in teardown_module; recent call_attempts rows within 30 min pruned.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Feature complete and verified. test_call_modes.py has two now-skipped live tests (test_live_desktop_call_sends_extension_as_agent, test_live_phone_call_normalises_and_persists) — the coverage they provided is folded into the per-request override tests. If future runs want to place additional live Smartflo calls, remove the pytest.skip lines; expect 2 paid attempts each run.",
+  "rca_of_the_issue": "Prior red test_users_list_returns_new_fields now green — server.py list_users() normalises row['call_mode'] = row.get('call_mode') or 'phone' and row['agent_extension'] = row.get('agent_extension') or '' before serialise; startup migration (lines 1191-1192) also backfills DB. The one remaining test_documents failure is unrelated: Starlette's FileResponse now uses RFC 5987 Content-Disposition filename* encoding which the assertion doesn't accept — fix is a one-liner in the test, not in product code."
+}

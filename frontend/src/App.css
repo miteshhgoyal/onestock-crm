@@ -1,0 +1,259 @@
+.App {
+    min-height: 100vh;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+.swipe-scroll-x {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+}
+
+@media (pointer: fine) {
+    .swipe-scroll-x {
+        cursor: grab;
+    }
+
+    .swipe-scroll-x.is-dragging {
+        cursor: grabbing;
+        user-select: none;
+    }
+}
+
+.crm-card {
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    box-shadow: 0 3px 12px rgb(0 0 0 / 0.06);
+    transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+
+.crm-card .text-muted-foreground {
+    color: hsl(var(--muted-foreground)) !important;
+    font-weight: 500;
+}
+
+.crm-card:hover {
+    border-color: hsl(var(--border));
+}
+
+.crm-card.depth-hover:hover {
+    transform: perspective(900px) rotateX(1deg) rotateY(-1deg) translateY(-3px);
+}
+
+[data-testid="direct-dial-card"],
+[data-testid="add-lead-dial-card"] {
+    color: hsl(var(--foreground));
+}
+
+[data-testid="direct-dial-card"] .text-muted-foreground,
+[data-testid="add-lead-dial-card"] .text-muted-foreground {
+    color: hsl(var(--muted-foreground)) !important;
+    font-weight: 500;
+}
+
+[data-testid="direct-dial-card"] input,
+[data-testid="add-lead-dial-card"] input {
+    color: hsl(var(--foreground)) !important;
+    font-weight: 500;
+}
+
+[data-testid="direct-dial-card"] input::placeholder,
+[data-testid="add-lead-dial-card"] input::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+    opacity: 1;
+}
+
+/* Keep the operational UI monochrome and readable across older utility classes. */
+html,
+body,
+#root {
+    background: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+}
+
+.app-header {
+    background-color: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+}
+
+aside,
+.workspace-sidebar {
+    background: hsl(var(--sidebar)) !important;
+    color: hsl(var(--sidebar-foreground)) !important;
+    box-shadow: 1px 0 0 hsl(var(--sidebar) / 0.8) !important;
+}
+
+aside a,
+aside button {
+    color: hsl(var(--sidebar-foreground)) !important;
+}
+
+aside a:hover,
+aside button:hover {
+    background: hsl(var(--sidebar-foreground) / 0.12) !important;
+}
+
+aside .bg-brand {
+    background: hsl(var(--sidebar-foreground)) !important;
+    color: hsl(var(--sidebar)) !important;
+}
+
+.metric-tile {
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--card-foreground)) !important;
+    box-shadow: 0 3px 12px rgb(0 0 0 / 0.05) !important;
+}
+
+.metric-tile:hover {
+    background: hsl(var(--secondary)) !important;
+    box-shadow: 0 6px 16px rgb(0 0 0 / 0.08) !important;
+}
+
+.crm-accent-panel,
+.gradient-border::after,
+.surface-grid {
+    background: hsl(var(--card)) !important;
+    background-image: none !important;
+    animation: none !important;
+}
+
+.bg-brand {
+    background-color: hsl(var(--brand)) !important;
+    color: hsl(var(--brand-foreground)) !important;
+}
+
+.text-brand-foreground {
+    color: hsl(var(--brand-foreground)) !important;
+}
+
+[class*="bg-[#"] {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+}
+
+[class*="text-[#"] {
+    color: hsl(var(--foreground)) !important;
+}
+
+[class*="border-[#"] {
+    border-color: hsl(var(--border)) !important;
+}
+
+[class*="bg-violet"],
+[class*="bg-emerald"],
+[class*="bg-red"],
+[class*="bg-yellow"],
+[class*="bg-orange"],
+[class*="bg-amber"],
+[class*="bg-blue"],
+[class*="bg-cyan"] {
+    background-color: #f3f3f3 !important;
+}
+
+[class*="bg-violet"] { background-color: #f3e8ff !important; color: #7c3aed !important; }
+[class*="bg-emerald"] { background-color: #ecfdf5 !important; color: #047857 !important; }
+[class*="bg-orange"],
+[class*="bg-amber"] { background-color: #fff7ed !important; color: #c2410c !important; }
+[class*="bg-red"] { background-color: #fef2f2 !important; color: #b91c1c !important; }
+[class*="bg-yellow"] { background-color: #fffbeb !important; color: #a16207 !important; }
+[class*="bg-blue"],
+[class*="bg-cyan"] { background-color: #eff6ff !important; color: #1d4ed8 !important; }
+
+[class*="text-violet"] { color: #7c3aed !important; }
+[class*="text-emerald"] { color: #047857 !important; }
+[class*="text-orange"],
+[class*="text-amber"] { color: #c2410c !important; }
+[class*="text-red"] { color: #b91c1c !important; }
+[class*="text-yellow"] { color: #a16207 !important; }
+[class*="text-blue"],
+[class*="text-cyan"] { color: #1d4ed8 !important; }
+
+/* Keep secondary text black while preserving the small semantic accents above. */
+main .text-muted-foreground {
+    color: hsl(var(--muted-foreground)) !important;
+}
+
+aside .text-muted-foreground {
+    color: hsl(var(--sidebar-foreground) / 0.72) !important;
+}
+
+html.dark .bg-white,
+html.dark [class~="bg-white"],
+html.dark .bg-background,
+html.dark .bg-card,
+html.dark .bg-popover {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+}
+
+html.dark .crm-card,
+html.dark .metric-tile {
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--card-foreground)) !important;
+}
+
+html.dark .metric-tile:hover {
+    background: hsl(var(--secondary)) !important;
+}
+
+html.dark [class*="bg-[#"] {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+}
+
+html.dark [class*="text-[#"] {
+    color: hsl(var(--foreground)) !important;
+}
+
+html.dark [class*="border-[#"] {
+    border-color: hsl(var(--border)) !important;
+}
+
+html.dark [class*="bg-violet"] { background-color: hsl(270 42% 23%) !important; color: hsl(270 82% 84%) !important; }
+html.dark [class*="bg-emerald"] { background-color: hsl(158 42% 19%) !important; color: hsl(152 58% 73%) !important; }
+html.dark [class*="bg-orange"],
+html.dark [class*="bg-amber"] { background-color: hsl(27 45% 21%) !important; color: hsl(32 88% 76%) !important; }
+html.dark [class*="bg-red"] { background-color: hsl(0 42% 23%) !important; color: hsl(0 78% 82%) !important; }
+html.dark [class*="bg-yellow"] { background-color: hsl(42 44% 22%) !important; color: hsl(45 85% 76%) !important; }
+html.dark [class*="bg-blue"],
+html.dark [class*="bg-cyan"] { background-color: hsl(202 44% 22%) !important; color: hsl(195 82% 78%) !important; }
+
+html.dark [class*="text-violet"] { color: hsl(270 82% 84%) !important; }
+html.dark [class*="text-emerald"] { color: hsl(152 58% 73%) !important; }
+html.dark [class*="text-orange"],
+html.dark [class*="text-amber"] { color: hsl(32 88% 76%) !important; }
+html.dark [class*="text-red"] { color: hsl(0 78% 82%) !important; }
+html.dark [class*="text-yellow"] { color: hsl(45 85% 76%) !important; }
+html.dark [class*="text-blue"],
+html.dark [class*="text-cyan"] { color: hsl(195 82% 78%) !important; }
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+}
+
+html.dark .bg-brand {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+}
+
+html.dark .text-brand-foreground {
+    color: hsl(var(--primary-foreground)) !important;
+}
+
+html.dark main .text-muted-foreground {
+    color: hsl(var(--muted-foreground)) !important;
+}
