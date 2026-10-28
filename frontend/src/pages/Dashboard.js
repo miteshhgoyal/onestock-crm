@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Activity, AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Clock3, FileText, Inbox, ListPlus, PhoneCall, RefreshCw, Settings2, TrendingUp, Users2, UsersRound, ContactRound } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Clock3, Download, FileText, Inbox, ListPlus, PhoneCall, RefreshCw, Settings2, TrendingUp, Users2, UsersRound, ContactRound } from "lucide-react";
 import { BarChart, Bar, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, errMsg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -10,6 +10,7 @@ import StatusBadge from "@/components/StatusBadge";
 import PanelSurface from "@/components/PanelSurface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import TelecallerDashboard from "@/pages/TelecallerDashboard";
 import ConvertedClubLeads from "@/components/ConvertedClubLeads";
 
@@ -35,6 +36,49 @@ function ManagerDashboard() {
   const [activity, setActivity] = useState([]);
   const [period, setPeriod] = useState("today");
   const [range, setRange] = useState({ from: "", to: "" });
+  const [showExport, setShowExport] = useState(false);
+  const [exportPreview, setExportPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const openExportDialog = async () => {
+    setExportPreview(null);
+    setPreviewLoading(true);
+    setShowExport(true);
+    try {
+      const { data } = await api.get("/admin/export-database/preview");
+      setExportPreview(data);
+    } catch (e) {
+      toast.error(errMsg(e));
+      setShowExport(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const runExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get("/admin/export-database", { responseType: "blob", timeout: 0 });
+      const disposition = res.headers["content-disposition"] || "";
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename = match ? match[1] : "crm_export.zip";
+      const href = URL.createObjectURL(res.data);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(href);
+      toast.success(`Downloaded ${filename}`);
+      setShowExport(false);
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +128,17 @@ function ManagerDashboard() {
           <p className="mt-1 text-sm text-muted-foreground">Here is what is happening across your sales workspace.</p>
         </div>
         <div className="flex gap-2">
+          {user?.role === "admin" && (
+            <Button
+              variant="outline"
+              data-testid="export-database-btn"
+              onClick={openExportDialog}
+              disabled={exporting}
+              className="border-border/70 bg-[#111f35] text-foreground hover:bg-[#172943]"
+            >
+              <Download size={14} className="mr-2" /> {exporting ? "Preparing export..." : "Export Database (JSON)"}
+            </Button>
+          )}
           <Button
             variant="outline"
             data-testid="refresh-dashboard-button"
@@ -94,6 +149,37 @@ function ManagerDashboard() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={showExport} onOpenChange={(open) => { if (!exporting) setShowExport(open); }}>
+        <DialogContent data-testid="export-database-dialog" className="rounded-none">
+          <DialogHeader>
+            <DialogTitle className="display text-xl font-black tracking-tight">Export entire database</DialogTitle>
+            <DialogDescription>
+              {previewLoading
+                ? "Checking collections..."
+                : exportPreview
+                  ? `This will download all ${exportPreview.database_count} database(s) · ${exportPreview.collection_count} collections / ${exportPreview.total_documents} documents, including user password hashes and customer data. Keep the file private.`
+                  : "Preparing..."}
+            </DialogDescription>
+          </DialogHeader>
+          {exportPreview && (
+            <div className="max-h-56 overflow-auto border border-border/60" data-testid="export-preview-list">
+              {Object.entries(exportPreview.collections).map(([name, count]) => (
+                <div key={name} className="flex items-center justify-between border-b border-border/40 px-3 py-1.5 text-xs last:border-b-0">
+                  <span className="mono">{name}</span>
+                  <span className="mono text-muted-foreground">{count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" data-testid="export-cancel-btn" onClick={() => setShowExport(false)} disabled={exporting} className="rounded-none">Cancel</Button>
+            <Button data-testid="export-confirm-btn" onClick={runExport} disabled={exporting || previewLoading || !exportPreview} className="rounded-none">
+              <Download size={14} className="mr-2" /> {exporting ? "Preparing export..." : "Download"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="mt-6 flex flex-wrap items-center gap-3" data-testid="manager-dashboard-date-filter">
         <div className="flex border border-border/70 p-1">

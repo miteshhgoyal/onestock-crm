@@ -121,5 +121,20 @@ Roles: Admin, Sub-admin, Team leader, Telecaller. Stack: React + FastAPI + Mongo
     **batched** (single `bulk_write`, was per-event sequential update_one -> 524) and id cap raised 200->5000.
   - Old `upload-sheet` endpoint kept but no longer used by the UI.
 
+- Admin DB export (Oct 2026, multi-database): `GET /api/admin/export-database` (admin-only, 403 otherwise)
+  scans EVERY non-system database on the Mongo connection (skips admin/local/config), exporting each
+  collection as `<db_name>/<collection>.json` (compact Extended JSON, preserves ObjectId/datetime, keeps
+  `password_hash`), plus `_manifest.json` (per-db counts) and `_indexes.json`. Memory-safe (cursor
+  streamed to temp zip in 2000-doc batches, deleted after send; compresslevel=1 for speed). `GET
+  .../preview` returns per-db + flat `db/collection` counts, `database_count`, `collection_count`,
+  `total_documents`. Dashboard admin-only "Export Database (JSON)" button + confirm dialog. Restore:
+  `backend/restore_from_export.py` (`--zip --mongo-url [--db] [--drop]`; `--db` consolidates all into one
+  db, else preserves source db names; recreates indexes; verifies counts vs manifest).
+  - IMPORTANT (env): PREVIEW uses a LOCAL mongo `test_database` (~9.8K docs) — NOT real data. PRODUCTION
+    uses Atlas db `team-pipeline-5-test_database` (~191K docs: activities 130K, leads 29K, call_attempts
+    23K, payment_club_events 7.7K). Run the export on the PRODUCTION site to get real data.
+  - Perf: initial per-doc indent build took ~117s on prod (near Cloudflare 120s). Optimized to compact
+    per-doc dumps + batched writes + compresslevel=1 (preview ~1.3s); redeployed.
+
 ## Test credentials
 See `/app/memory/test_credentials.md`.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import LeadDrawer from "@/components/LeadDrawer";
+import HorizontalScrollArea from "@/components/HorizontalScrollArea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const formatDate = (value) => value
@@ -20,8 +21,22 @@ const formatAmount = (amount, currency) => amount == null
 export default function MyFiftyCrClub() {
   const [items, setItems] = useState([]);
   const [brokers, setBrokers] = useState([]);
+  const [revenueReport, setRevenueReport] = useState({ monthly: [], payments: [], last_synced_at: null });
+  const [activeSection, setActiveSection] = useState("clients");
+  const [reportLoading, setReportLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [clientSource, setClientSource] = useState("all");
+  const [expiryStatus, setExpiryStatus] = useState("all");
+  const [depositStatus, setDepositStatus] = useState("all");
+  const [accountStatus, setAccountStatus] = useState("all");
+  const [tradingMode, setTradingMode] = useState("all");
+  const [brokerQuery, setBrokerQuery] = useState("");
+  const [sellerFilter, setSellerFilter] = useState("all");
+  const [joinedFrom, setJoinedFrom] = useState("");
+  const [joinedTo, setJoinedTo] = useState("");
+  const [expiresFrom, setExpiresFrom] = useState("");
+  const [expiresTo, setExpiresTo] = useState("");
   const [page, setPage] = useState(1);
   const [openLeadId, setOpenLeadId] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -49,6 +64,18 @@ export default function MyFiftyCrClub() {
     }
   }, []);
 
+  const loadRevenueReport = useCallback(async (silent = false) => {
+    if (!silent) setReportLoading(true);
+    try {
+      const { data } = await api.get("/payments/50-cr-club/my-revenue-report");
+      setRevenueReport(data);
+    } catch (error) {
+      toast.error(errMsg(error));
+    } finally {
+      if (!silent) setReportLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const intervalId = window.setInterval(() => {
@@ -57,17 +84,102 @@ export default function MyFiftyCrClub() {
     return () => window.clearInterval(intervalId);
   }, [load]);
 
+  useEffect(() => {
+    if (activeSection !== "revenue") return undefined;
+    loadRevenueReport();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadRevenueReport(true);
+    }, 60000);
+    return () => window.clearInterval(intervalId);
+  }, [activeSection, loadRevenueReport]);
+
   const filteredItems = items.filter((item) => {
+    const profile = item.member_profile || {};
+    const club = item.club || {};
+    const assignedByAdmin = Boolean(item.club_assigned_by);
     if (statusFilter !== "all" && item.club_status !== statusFilter) return false;
+    if (clientSource === "admin_assigned" && !assignedByAdmin) return false;
+    if (clientSource === "rm_own" && assignedByAdmin) return false;
+    if (sellerFilter !== "all") {
+      const ownerType = profile.club_seller_type || club.seller_type || "direct";
+      if (sellerFilter === "direct" && ownerType !== "direct") return false;
+      if (sellerFilter === "seller" && ownerType !== "seller") return false;
+    }
+    const joinedAt = club.joined_at || profile.joined_at;
+    const expiresAt = club.expires_at || profile.expires_at;
+    if (joinedFrom && (!joinedAt || joinedAt < joinedFrom)) return false;
+    if (joinedTo && (!joinedAt || joinedAt > joinedTo)) return false;
+    if (expiresFrom && (!expiresAt || expiresAt < expiresFrom)) return false;
+    if (expiresTo && (!expiresAt || expiresAt > expiresTo)) return false;
+    const expiryDate = expiresAt ? new Date(`${expiresAt}T00:00:00`) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expired = expiryDate && expiryDate < today;
+    const unpaid = profile.deposit_made !== true && club.deposit_made !== true;
+    if (expiryStatus === "expired" && !expired) return false;
+    if (expiryStatus === "expired_unpaid" && !(expired && unpaid)) return false;
+    const depositMade = profile.deposit_made ?? club.deposit_made;
+    if (depositStatus === "made" && depositMade !== true) return false;
+    if (depositStatus === "not_made" && depositMade !== false) return false;
+    if (depositStatus === "not_recorded" && depositMade != null) return false;
+    const brokerAccountStatus = profile.broker_account_status || club.broker_account_status;
+    if (accountStatus === "not_recorded" && brokerAccountStatus) return false;
+    if (accountStatus !== "all" && accountStatus !== "not_recorded" && brokerAccountStatus !== accountStatus) return false;
+    if (tradingMode !== "all" && (profile.trading_mode || club.trading_mode) !== tradingMode) return false;
     const haystack = [item.crm_lead?.name, item.user?.name, item.user?.phone, item.user?.email,
-      item.club?.offering, item.club?.claimed_market, item.payment?.status,
-      item.member_profile?.broker_name, item.member_profile?.broker_unique_id,
-      item.club?.joined_at, item.club?.expires_at]
+      club.offering, club.claimed_market, item.payment?.status,
+      profile.broker_name, profile.broker_unique_id, profile.new_broker_name,
+      profile.current_broker_name, profile.club_seller_name, club.seller_name,
+      joinedAt, expiresAt]
       .filter(Boolean).join(" ").toLowerCase();
-    return haystack.includes(query.trim().toLowerCase());
+    return haystack.includes(query.trim().toLowerCase())
+      && [profile.broker_name, profile.broker_unique_id, club.broker_name, club.broker_unique_id]
+        .filter(Boolean).join(" ").toLowerCase().includes(brokerQuery.trim().toLowerCase());
   });
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / 50));
   const pageItems = filteredItems.slice((page - 1) * 50, page * 50);
+  const accountOpenedCount = filteredItems.filter((item) => (item.member_profile?.broker_account_status || item.club?.broker_account_status || "") === "opened").length;
+  const depositMadeCount = filteredItems.filter((item) => (item.member_profile?.deposit_made ?? item.club?.deposit_made ?? null) === true).length;
+  const hasActiveFilters = [
+    query,
+    statusFilter !== "all",
+    clientSource !== "all",
+    expiryStatus !== "all",
+    depositStatus !== "all",
+    accountStatus !== "all",
+    tradingMode !== "all",
+    brokerQuery,
+    sellerFilter !== "all",
+    joinedFrom,
+    joinedTo,
+    expiresFrom,
+    expiresTo,
+  ].some(Boolean);
+  const clearAllFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setClientSource("all");
+    setExpiryStatus("all");
+    setDepositStatus("all");
+    setAccountStatus("all");
+    setTradingMode("all");
+    setBrokerQuery("");
+    setSellerFilter("all");
+    setJoinedFrom("");
+    setJoinedTo("");
+    setExpiresFrom("");
+    setExpiresTo("");
+    setPage(1);
+  };
+  const isExpired = (item) => {
+    const expiry = formatSourceDate(item.club?.expires_at || item.member_profile?.expires_at);
+    if (!expiry) return false;
+    if (expiry === "—") return false;
+    const expiryDate = new Date(`${expiry}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return expiryDate < today;
+  };
 
   const openProfile = (item) => {
     const profile = item.member_profile || {};
@@ -180,24 +292,88 @@ export default function MyFiftyCrClub() {
           <h1 className="display mt-2 text-3xl font-black">My 50 Cr Club clients</h1>
           <p className="mt-1 text-sm text-muted-foreground">Club assignments are separate from your CRM lead queue.</p>
         </div>
-        <Button type="button" variant="outline" onClick={load} disabled={loading} className="rounded-none border-border/70" aria-label="Refresh my 50 Cr Club leads">
-          <RefreshCw size={14} className="mr-2" /> Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button type="button" variant="outline" onClick={clearAllFilters} disabled={!hasActiveFilters} className="rounded-none border-border/70" aria-label="Clear all Club filters">Clear all filters</Button>
+          <Button type="button" variant="outline" onClick={load} disabled={loading} className="rounded-none border-border/70" aria-label="Refresh my 50 Cr Club leads">
+            <RefreshCw size={14} className="mr-2" /> Refresh
+          </Button>
+        </div>
       </div>
 
-      <section className="mt-6 grid gap-px border border-border/60 bg-border/60 sm:grid-cols-2" data-testid="my-club-summary">
-        {[["Verified assigned leads", items.length], ["Calls initiated", items.reduce((total, item) => total + (item.call_count || 0), 0)]].map(([label, value]) => (
+      <section className="mt-6 grid gap-px border border-border/60 bg-border/60 sm:grid-cols-2 xl:grid-cols-4" data-testid="my-club-summary">
+        {[["Verified assigned leads", filteredItems.length], ["Account opened", accountOpenedCount], ["Deposit made", depositMadeCount], ["Calls initiated", filteredItems.reduce((total, item) => total + (item.call_count || 0), 0)]].map(([label, value]) => (
           <div key={label} className="bg-background px-5 py-4"><div className="overline">{label}</div><div className="mono mt-2 text-2xl font-bold">{value.toLocaleString("en-IN")}</div></div>
         ))}
       </section>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
-        <div className="relative w-full sm:w-72">
+      <div className="mt-5 flex gap-2 border-b border-border/60" role="tablist" aria-label="50 Cr Club RM sections">
+        {[["clients", "My clients"], ["revenue", "50 Cr Club reports"]].map(([section, label]) => (
+          <button key={section} type="button" role="tab" aria-selected={activeSection === section}
+            onClick={() => setActiveSection(section)}
+            className={`border-b-2 px-4 py-2 text-sm font-medium ${activeSection === section ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === "revenue" && <section className="mt-5" data-testid="my-club-revenue-report">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="overline">Verified payments assigned to you</div>
+            <h2 className="display mt-1 text-2xl font-bold">Monthly Club revenue</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {revenueReport.auto_refresh_enabled ? "Source refreshes automatically; report checks for updates every minute." : "Report refreshes from verified payments every minute."}
+              {revenueReport.last_synced_at ? ` Last source sync: ${formatDate(revenueReport.last_synced_at)}` : ""}
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={() => loadRevenueReport()} disabled={reportLoading} className="rounded-none" aria-label="Refresh monthly revenue report">
+            <RefreshCw size={14} className="mr-2" />{reportLoading ? "Refreshing…" : "Refresh report"}
+          </Button>
+        </div>
+        {Object.keys(revenueReport.sync_errors || {}).length > 0 && <p className="mb-3 border border-amber-500/40 px-4 py-3 text-sm text-amber-700">Payment source sync had an error. Showing the latest verified payments stored locally.</p>}
+        <HorizontalScrollArea className="border border-border/60" aria-label="Scroll monthly revenue report">
+          <table className="w-full min-w-[700px] text-sm">
+            <thead><tr className="border-b border-border/60 text-left">{["Payment month", "Revenue", "Payments", "Paying clients"].map((heading) => <th key={heading} className="overline whitespace-nowrap px-4 py-3">{heading}</th>)}</tr></thead>
+            <tbody>
+              {revenueReport.monthly.map((month) => <tr key={`${month.month}-${month.currency}`} className="border-b border-border/50">
+                <td className="px-4 py-3">{new Date(`${month.month}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</td>
+                <td className="mono px-4 py-3">{formatAmount(month.revenue, month.currency)}</td>
+                <td className="mono px-4 py-3">{month.payments.toLocaleString("en-IN")}</td>
+                <td className="mono px-4 py-3">{month.clients.toLocaleString("en-IN")}</td>
+              </tr>)}
+              {!revenueReport.monthly.length && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-muted-foreground">{reportLoading ? "Loading revenue report…" : "No verified payments found for your assigned clients."}</td></tr>}
+            </tbody>
+          </table>
+        </HorizontalScrollArea>
+        <div className="mt-5 border border-border/60" data-testid="my-club-revenue-details">
+          <div className="border-b border-border/60 px-5 py-3"><div className="overline">Payment details</div></div>
+          <HorizontalScrollArea className="overflow-x-auto" aria-label="Scroll payment details">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead><tr className="border-b border-border/60 text-left">{["Client", "Membership month", "Paid date", "Payment month", "Amount", "Payment ID"].map((heading) => <th key={heading} className="overline whitespace-nowrap px-4 py-3">{heading}</th>)}</tr></thead>
+              <tbody>
+                {revenueReport.payments.map((payment) => <tr key={payment.id} className="border-b border-border/50">
+                  <td className="px-4 py-3">{payment.client}{payment.phone && <span className="mt-1 block text-xs text-muted-foreground">{payment.phone}</span>}</td>
+                  <td className="px-4 py-3">Month {payment.membership_month}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{formatDate(payment.paid_at)}</td>
+                  <td className="px-4 py-3">{payment.month}</td>
+                  <td className="mono px-4 py-3">{formatAmount(payment.amount, payment.currency)}</td>
+                  <td className="mono px-4 py-3">{payment.payment_id || "—"}</td>
+                </tr>)}
+                {!revenueReport.payments.length && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-muted-foreground">No payment details available.</td></tr>}
+              </tbody>
+            </table>
+          </HorizontalScrollArea>
+        </div>
+      </section>}
+
+      {activeSection === "clients" && <>
+      <div className="mt-6 grid gap-3 border-b border-border/60 pb-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="relative">
           <Search size={14} className="absolute left-3 top-3 text-muted-foreground" />
           <Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search your Club leads" aria-label="Search my 50 Cr Club leads" className="h-9 w-full rounded-none pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }}>
-          <SelectTrigger className="h-9 w-full rounded-none sm:w-48" aria-label="Filter by Club status"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by Club status"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Club statuses</SelectItem>
             <SelectItem value="unworked">Unworked</SelectItem>
@@ -208,6 +384,49 @@ export default function MyFiftyCrClub() {
             <SelectItem value="lost">Closed</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={sellerFilter} onValueChange={(value) => { setSellerFilter(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by relationship owner"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All owners</SelectItem>
+            <SelectItem value="direct">Direct clients</SelectItem>
+            <SelectItem value="seller">Seller clients</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={clientSource} onValueChange={(value) => { setClientSource(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by client assignment source"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All client sources</SelectItem><SelectItem value="rm_own">My clients</SelectItem><SelectItem value="admin_assigned">Assigned by admin</SelectItem></SelectContent>
+        </Select>
+        <Select value={expiryStatus} onValueChange={(value) => { setExpiryStatus(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by Club expiry status"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All expiry statuses</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="expired_unpaid">Expired and unpaid</SelectItem></SelectContent>
+        </Select>
+        <Select value={depositStatus} onValueChange={(value) => { setDepositStatus(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by deposit status"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All deposit statuses</SelectItem><SelectItem value="made">Deposit made</SelectItem><SelectItem value="not_made">No deposit</SelectItem><SelectItem value="not_recorded">Deposit not recorded</SelectItem></SelectContent>
+        </Select>
+        <Select value={accountStatus} onValueChange={(value) => { setAccountStatus(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by broker account status"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All account statuses</SelectItem><SelectItem value="opened">Account opened</SelectItem><SelectItem value="in_progress">In progress</SelectItem><SelectItem value="not_opened">Not opened</SelectItem><SelectItem value="not_required">Not required</SelectItem><SelectItem value="not_recorded">Not recorded</SelectItem></SelectContent>
+        </Select>
+        <Select value={tradingMode} onValueChange={(value) => { setTradingMode(value); setPage(1); }}>
+          <SelectTrigger className="h-9 w-full rounded-none" aria-label="Filter by trading mode"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All trading modes</SelectItem><SelectItem value="self">Self</SelectItem><SelectItem value="group">Group</SelectItem><SelectItem value="both">Both</SelectItem></SelectContent>
+        </Select>
+        <Input value={brokerQuery} onChange={(event) => { setBrokerQuery(event.target.value); setPage(1); }} placeholder="Broker or broker ID" aria-label="Filter by broker or broker ID" className="h-9 w-full rounded-none" />
+        <div className="space-y-1">
+          <span className="overline block">Joining range</span>
+          <div className="flex gap-2">
+            <Input type="date" value={joinedFrom} onChange={(event) => { setJoinedFrom(event.target.value); setPage(1); }} placeholder="From" aria-label="Filter joining range from date" className="h-9 w-full rounded-none" />
+            <Input type="date" value={joinedTo} onChange={(event) => { setJoinedTo(event.target.value); setPage(1); }} placeholder="To" aria-label="Filter joining range to date" className="h-9 w-full rounded-none" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <span className="overline block">Expiry range</span>
+          <div className="flex gap-2">
+            <Input type="date" value={expiresFrom} onChange={(event) => { setExpiresFrom(event.target.value); setPage(1); }} placeholder="From" aria-label="Filter expiry range from date" className="h-9 w-full rounded-none" />
+            <Input type="date" value={expiresTo} onChange={(event) => { setExpiresTo(event.target.value); setPage(1); }} placeholder="To" aria-label="Filter expiry range to date" className="h-9 w-full rounded-none" />
+          </div>
+        </div>
       </div>
 
       <section className="mt-5 border border-border/60" data-testid="my-club-leads-table">
@@ -215,23 +434,32 @@ export default function MyFiftyCrClub() {
           <div className="overline">Verified Club leads</div>
           <div className="mono text-xs text-muted-foreground">{filteredItems.length.toLocaleString("en-IN")} records</div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1450px] text-sm">
-            <thead><tr className="border-b border-border/60 text-left">{["Club client", "Assigned RM", "Relationship owner", "Phone", "Joined", "Expires", "Offering", "Market", "Payment", "Membership", "Next follow-up", "Calls", "Last dialed", "Club status", "Actions"].map((heading) => <th key={heading} className="overline whitespace-nowrap px-4 py-3">{heading}</th>)}</tr></thead>
+        <HorizontalScrollArea className="overflow-x-auto" aria-label="Scroll assigned 50 Cr Club leads table">
+          <table className="w-full min-w-[2000px] text-sm">
+            <thead><tr className="border-b border-border/60 text-left">{["Club client", "Assigned RM", "Client source", "Relationship owner", "Phone", "Joined", "Expires", "Offering", "Market", "Broker", "Broker ID", "Account", "Deposit", "Trading", "Group profit", "Payment", "Membership", "Next follow-up", "Calls", "Last dialed", "Club status", "Actions"].map((heading) => <th key={heading} className="overline whitespace-nowrap px-4 py-3">{heading}</th>)}</tr></thead>
             <tbody>
-              {pageItems.map((item) => (
-                <tr key={item.id} className="border-b border-border/50 hover:bg-white/[0.03]">
-                  <td className="px-4 py-3">
-                    <div className="font-semibold" data-testid={`my-club-purchase-${item.id}`}>{item.crm_lead?.name || item.user?.name || "Club client"}</div>
-                    {item.crm_lead && <div className="mt-1 text-xs text-muted-foreground">CRM record linked separately</div>}
-                  </td>
-                  <td className="px-4 py-3 text-sm">{item.assigned_to_name || "Unassigned"}</td>
-                  <td className="px-4 py-3 text-sm">{item.member_profile?.club_seller_type === "direct" ? "Direct client" : item.member_profile?.club_seller_name || item.club?.seller_name || "Not recorded"}</td>
-                  <td className="mono px-4 py-3">{item.crm_lead?.phone || item.user?.phone || "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs">{formatSourceDate(item.club?.joined_at || item.member_profile?.joined_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs">{formatSourceDate(item.club?.expires_at || item.member_profile?.expires_at)}</td>
+              {pageItems.map((item) => {
+                const expired = isExpired(item);
+                return (
+                  <tr key={item.id} className={`border-b border-border/50 hover:bg-white/[0.03] ${expired ? "bg-red-500/10 animate-pulse" : ""}`}>
+                    <td className="px-4 py-3">
+                      <button type="button" onClick={() => item.crm_lead?.id ? setOpenLeadId(item.crm_lead.id) : openProfile(item)} className="cursor-pointer text-left font-semibold hover:text-brand hover:underline underline-offset-4" aria-label={`Open details for ${item.crm_lead?.name || item.user?.name || "Club client"}`} data-testid={`my-club-purchase-${item.id}`}>{item.crm_lead?.name || item.user?.name || "Club client"}</button>
+                      {item.crm_lead && <div className="mt-1 text-xs text-muted-foreground">CRM record linked separately</div>}
+                    </td>
+                    <td className="px-4 py-3 text-sm">{item.assigned_to_name || "Unassigned"}</td>
+                    <td className="px-4 py-3 text-sm">{item.club_assigned_by ? "Assigned by admin" : "My client"}</td>
+                    <td className="px-4 py-3 text-sm">{item.member_profile?.club_seller_type === "direct" ? "Direct client" : item.member_profile?.club_seller_name || item.club?.seller_name || "Not recorded"}</td>
+                    <td className="mono px-4 py-3">{item.crm_lead?.phone || item.user?.phone || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs">{formatSourceDate(item.club?.joined_at || item.member_profile?.joined_at)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs">{expired ? <span className="font-semibold text-red-600">{formatSourceDate(item.club?.expires_at || item.member_profile?.expires_at)}</span> : formatSourceDate(item.club?.expires_at || item.member_profile?.expires_at)}</td>
                   <td className="px-4 py-3">{item.club?.offering || item.payment?.product || "—"}</td>
                   <td className="px-4 py-3">{item.club?.claimed_market || "—"}</td>
+                  <td className="px-4 py-3">{item.member_profile?.broker_name || item.club?.broker_name || "—"}</td>
+                  <td className="mono px-4 py-3">{item.member_profile?.broker_unique_id || item.club?.broker_unique_id || "—"}</td>
+                  <td className="px-4 py-3 capitalize">{item.member_profile?.broker_account_status?.replaceAll("_", " ") || "Not recorded"}</td>
+                  <td className="px-4 py-3">{item.member_profile?.deposit_made == null ? "Not recorded" : item.member_profile.deposit_made ? "Yes" : "No"}{item.member_profile?.deposit_amount != null && <span className="mono mt-1 block text-xs text-muted-foreground">{formatAmount(item.member_profile.deposit_amount, "₹")}</span>}</td>
+                  <td className="px-4 py-3 capitalize">{item.member_profile?.trading_mode || "Not recorded"}</td>
+                  <td className="mono px-4 py-3">{formatAmount(item.member_profile?.expected_group_profit, "₹")}</td>
                   <td className="px-4 py-3"><span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={14} /> Verified</span><div className="mono mt-1 text-xs text-muted-foreground">{formatAmount(item.payment?.amount, item.payment?.currency)}</div></td>
                   <td className="px-4 py-3 text-xs">{item.member_profile?.membership_enabled === true ? <span className="text-emerald-700">Enabled</span> : item.member_profile?.membership_enabled === false ? <span className="text-red-600">Disabled</span> : <span className="text-muted-foreground">Not checked</span>}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{formatDate(item.member_profile?.next_follow_up_at)}</td>
@@ -240,11 +468,12 @@ export default function MyFiftyCrClub() {
                   <td className="px-4 py-3"><Select value={item.club_status || "unworked"} onValueChange={(status) => updateClubStatus(item, status)}><SelectTrigger aria-label={`Change ${item.user?.name || item.crm_lead?.name || "client"} Club status`} className="h-8 w-36 rounded-none"><SelectValue /></SelectTrigger><SelectContent>{[["unworked", "Unworked"], ["contacted", "Contacted"], ["follow_up", "Follow-up"], ["enrolled", "Enrolled"], ["not_interested", "Not interested"], ["lost", "Closed"]].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></td>
                   <td className="px-4 py-3"><div className="flex items-center gap-1.5"><Button type="button" size="sm" variant="outline" onClick={() => callClient(item)} disabled={callingId === item.id || !(item.crm_lead?.phone || item.user?.phone)} className="h-8 rounded-none"><Phone size={14} className="mr-1.5" />{callingId === item.id ? "Calling" : "Call"}</Button><Button type="button" size="sm" variant="outline" onClick={() => loadCallHistory(item)} className="h-8 rounded-none" aria-label={`View ${item.call_count || 0} calls for ${item.user?.name || item.crm_lead?.name}`}><History size={14} className="mr-1.5" />Calls ({item.call_count || 0})</Button><Button type="button" size="sm" variant="outline" onClick={() => openProfile(item)} className="h-8 rounded-none" aria-label="Edit Club profile"><Pencil size={14} /></Button>{item.crm_lead && <Button type="button" size="sm" variant="outline" onClick={() => setOpenLeadId(item.crm_lead.id)} className="h-8 rounded-none" aria-label="Open linked CRM lead"><ExternalLink size={14} /></Button>}</div></td>
                 </tr>
-              ))}
-              {!pageItems.length && <tr><td colSpan={13} className="px-5 py-12 text-center text-sm text-muted-foreground">{loading ? "Loading your assigned Club purchases…" : "No Club purchases match these filters."}</td></tr>}
+                );
+              })}
+              {!pageItems.length && <tr><td colSpan={22} className="px-5 py-12 text-center text-sm text-muted-foreground">{loading ? "Loading your assigned Club purchases…" : "No Club purchases match these filters."}</td></tr>}
             </tbody>
           </table>
-        </div>
+        </HorizontalScrollArea>
         {pageCount > 1 && <div className="flex items-center justify-between border-t border-border/60 px-4 py-3">
           <span className="mono text-xs text-muted-foreground">Page {page} of {pageCount}</span>
           <div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button type="button" variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)}>Next</Button></div>
@@ -301,6 +530,7 @@ export default function MyFiftyCrClub() {
       </Sheet>
 
       <LeadDrawer leadId={openLeadId} open={Boolean(openLeadId)} onOpenChange={(open) => !open && setOpenLeadId(null)} onChanged={() => load(true)} />
+      </>}
     </div>
   );
 }

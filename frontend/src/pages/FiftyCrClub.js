@@ -15,12 +15,20 @@ const formatSourceDate = (value) => value ? String(value).match(/^\d{4}-\d{2}-\d
 const getExpiryDate = (record) => formatSourceDate(
   record.club?.expires_at || record.member_profile?.expires_at || record.club_expires_at,
 );
+const isExpired = (record) => {
+  const expiry = getExpiryDate(record);
+  if (expiry === "—") return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(`${expiry}T00:00:00`) < today;
+};
 
 const formatAmount = (amount, currency) => {
   if (amount == null) return "—";
   const value = Number(amount).toLocaleString("en-IN", { maximumFractionDigits: 2 });
   return `${currency ? `${currency} ` : ""}${value}`;
 };
+const csvValue = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 
 const hasDetailValue = (value) => value !== null && value !== undefined && value !== "" && value !== "—";
 
@@ -330,6 +338,57 @@ export default function FiftyCrClub({ initialTab = "purchases", reportOnly = fal
       record.member_profile?.club_seller_name, record.member_profile?.club_seller_type, record.follow_up_routine].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
+  const reportExportRecords = rmFilter === "all"
+    ? reportRecords
+    : convertedClubMembers.filter((record) => rmFilter === "unassigned"
+      ? !record.assigned_to_id
+      : record.assigned_to_id === rmFilter);
+  const downloadMemberReport = () => {
+    const headers = [
+      "Member", "Assigned RM", "Phone", "Email", "Seller / Ref", "Broker", "Broker ID",
+      "Joined", "Expires", "Account status", "Deposit made", "Deposit amount",
+      "Trading mode", "Expected group profit", "Using product", "Membership enabled",
+      "Follow-up routine", "Next follow-up", "Club status", "Payment ID",
+    ];
+    const rows = reportExportRecords.map((record) => {
+      const profile = record.member_profile || {};
+      const contact = record.crm_lead || record.user || {};
+      return [
+        contact.name || "Name not provided",
+        record.assigned_to_name || "Unassigned",
+        contact.phone,
+        contact.email,
+        profile.club_seller_name || record.club?.seller_name || (profile.club_seller_type === "direct" ? "Direct" : ""),
+        profile.broker_name || record.club?.broker_name,
+        profile.broker_unique_id || record.club?.broker_unique_id,
+        profile.joined_at || record.club?.joined_at || record.club_joined_at,
+        profile.expires_at || record.club?.expires_at || record.club_expires_at,
+        profile.broker_account_status,
+        profile.deposit_made,
+        profile.deposit_amount,
+        profile.trading_mode,
+        profile.expected_group_profit,
+        profile.product_in_use,
+        profile.membership_enabled,
+        profile.follow_up_routine,
+        profile.next_follow_up_at,
+        record.club_status,
+        record.payment?.payment_id,
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(csvValue).join(",")).join("\r\n");
+    const blobUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    const selectedRm = telecallers.find((telecaller) => telecaller.id === rmFilter);
+    const scope = rmFilter === "all" ? "club-member-report" : rmFilter === "unassigned"
+      ? "unassigned-club-members"
+      : (selectedRm?.name || "rm-club-members").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    link.download = `50-cr-${scope}.csv`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
+    toast.success(`${reportExportRecords.length.toLocaleString("en-IN")} member rows downloaded`);
+  };
   const reportPageCount = Math.max(1, Math.ceil(reportRecords.length / 50));
   const reportPageRecords = reportRecords.slice((page - 1) * 50, page * 50);
   const activeRms = (teams.find((team) => team.id === teamId)?.members || [])
@@ -651,7 +710,12 @@ export default function FiftyCrClub({ initialTab = "purchases", reportOnly = fal
       {activeTab === "report" && <section className="mt-5" data-testid="club-member-report">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div><div className="overline">50 Cr Club · verified and enrolled</div><h2 className="display mt-1 text-2xl font-bold">Club member report</h2></div>
-          <div className="mono text-xs text-muted-foreground">{reportRecords.length.toLocaleString("en-IN")} matching members</div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="mono text-xs text-muted-foreground">{reportRecords.length.toLocaleString("en-IN")} matching members</div>
+            <Button type="button" variant="outline" onClick={downloadMemberReport} disabled={!reportExportRecords.length} className="h-9 rounded-none" aria-label={rmFilter === "all" ? "Download Club member report CSV" : "Download all members for selected RM as CSV"}>
+              <Download size={14} className="mr-2" />{rmFilter === "all" ? "Download report CSV" : "Download RM members CSV"}
+            </Button>
+          </div>
         </div>
         <div className="grid gap-px border border-border/60 bg-border/60 sm:grid-cols-2 xl:grid-cols-5" data-testid="club-report-stats">
           {[
@@ -668,14 +732,15 @@ export default function FiftyCrClub({ initialTab = "purchases", reportOnly = fal
             <tbody>
               {reportPageRecords.map((record) => {
                 const profile = record.member_profile || {};
-                return <tr key={record.id} className="border-b border-border/50 align-top hover:bg-white/[0.03]">
+                const expired = isExpired({ ...record, member_profile: profile });
+                return <tr key={record.id} className={`border-b border-border/50 align-top hover:bg-white/[0.03] ${expired ? "bg-red-500/10 animate-pulse" : ""}`}>
                   <td className="px-4 py-3"><div className="font-semibold">{record.crm_lead?.name || record.user?.name || "Name not provided"}</div><div className="mt-1 text-xs text-muted-foreground">{record.club?.offering || record.payment?.product || "50 Cr Club"}</div></td>
                   <td className="px-4 py-3">{record.assigned_to_name || "Unassigned"}</td>
                   <td className="mono px-4 py-3">{record.crm_lead?.phone || record.user?.phone || "—"}</td>
                   <td className="px-4 py-3">{profile.broker_name || "—"}</td>
                   <td className="mono px-4 py-3">{profile.broker_unique_id || "—"}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs">{formatSourceDate(profile.joined_at || record.club_joined_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs">{formatSourceDate(profile.expires_at || record.club_expires_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs">{expired ? <span className="font-semibold text-red-600">{formatSourceDate(profile.expires_at || record.club_expires_at)}</span> : formatSourceDate(profile.expires_at || record.club_expires_at)}</td>
                   <td className="px-4 py-3">{profile.broker_account_status?.replace(/_/g, " ") || "Not recorded"}</td>
                   <td className="mono px-4 py-3">{profile.expected_group_profit == null ? "—" : formatAmount(profile.expected_group_profit, "INR")}</td>
                   <td className="px-4 py-3">{profile.product_in_use == null ? "Not checked" : profile.product_in_use ? "Yes" : "No"}</td>

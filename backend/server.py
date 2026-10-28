@@ -1,5 +1,8 @@
+import calendar
 import csv
 import io
+import tempfile
+import zipfile
 import logging
 import math
 import os
@@ -21,13 +24,14 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from bson import ObjectId  # noqa: E402
+from bson import ObjectId, json_util  # noqa: E402
 from pymongo import UpdateOne  # noqa: E402
 from fastapi import (APIRouter, BackgroundTasks, Depends, FastAPI, File, Form, Header,  # noqa: E402
                      HTTPException, Query, Request, Response, UploadFile)
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
-from starlette.responses import StreamingResponse  # noqa: E402
+from starlette.responses import StreamingResponse, FileResponse  # noqa: E402
+from starlette.background import BackgroundTask  # noqa: E402
 
 from auth import (create_access_token, create_refresh_token, decode_token,  # noqa: E402
                   extract_token, hash_password, oid, require_perm,
@@ -884,7 +888,9 @@ async def build_lead_query(user: dict, status=None, source=None, assigned_to=Non
                            deposit_min=None, deposit_max=None, broker_account_status=None,
                            trading_mode=None, new_broker_name=None, current_broker_name=None,
                            club_seller_name=None, broker_name=None, broker_unique_id=None,
-                           exclude_club=False) -> dict:
+                           club_joined_from=None, club_joined_to=None,
+                           club_expires_from=None, club_expires_to=None,
+                           club_expiry_status=None, exclude_club=False) -> dict:
     query = dict(await lead_scope(user))
     if status:
         query["status"] = status
@@ -895,6 +901,8 @@ async def build_lead_query(user: dict, status=None, source=None, assigned_to=Non
     if course_id:
         query["course_id"] = ObjectId(course_id)
     if assigned_to:
+        if assigned_to != "none" and not ObjectId.is_valid(assigned_to):
+            raise HTTPException(status_code=400, detail="Invalid assigned telecaller")
         query["assigned_to"] = ObjectId(assigned_to) if assigned_to != "none" else None
     tag_values = [tag.strip().lower() for tag in (tags or "").split(",") if tag.strip()]
     if tag_values:
@@ -943,7 +951,23 @@ async def build_lead_query(user: dict, status=None, source=None, assigned_to=Non
     if broker_name:
         query["broker_name"] = {"$regex": re.escape(broker_name), "$options": "i"}
     if broker_unique_id:
-        query["broker_unique_id"] = {"$regex": re.escape(broker_unique_id), "$options": "i"}
+        query["broker_unique_id"] = {"$regex": broker_unique_id, "$options": "i"}
+    for field, start, end in (
+        ("club_joined_at", club_joined_from, club_joined_to),
+        ("club_expires_at", club_expires_from, club_expires_to),
+    ):
+        date_bounds = {}
+        if start:
+            date_bounds["$gte"] = start
+        if end:
+            date_bounds["$lt"] = f"{end}T24"
+        if date_bounds:
+            query.setdefault("$and", []).append({field: date_bounds})
+    if club_expiry_status:
+        expiry_filter = {"club_expires_at": {"$lt": utcnow().date().isoformat()}}
+        if club_expiry_status == "expired_unpaid":
+            expiry_filter["deposit_made"] = False
+        query.setdefault("$and", []).append(expiry_filter)
     if q:
         query.setdefault("$and", []).append({"$or": [{"name": {"$regex": q, "$options": "i"}},
                                   {"phone": {"$regex": q}},
@@ -1042,9 +1066,11 @@ async def build_lead_query(user: dict, status=None, source=None, assigned_to=Non
         query["status"] = {"$nin": ["converted", "lost", "not_interested"]}
         query["notes"] = {"$size": 0}
         query["last_action_at"] = {"$lt": now - timedelta(hours=24)}
-    elif bucket == "untouched":
+    elif bucket in ("untouched", "club_unworked"):
         query.setdefault("$and", []).append({"assigned_to": {"$ne": None}})
         query["status"] = "assigned"
+        if bucket == "club_unworked":
+            query["tags"] = {"$all": ["50-cr-club"]}
     elif bucket == "inactive":
         query["last_action_at"] = {"$lt": now - timedelta(days=3)}
         query["status"] = {"$nin": ["converted", "lost"]}
@@ -1084,6 +1110,11 @@ async def list_leads(
     current_broker_name: Optional[str] = None,
     broker_name: Optional[str] = None,
     broker_unique_id: Optional[str] = None,
+    club_joined_from: Optional[str] = None,
+    club_joined_to: Optional[str] = None,
+    club_expires_from: Optional[str] = None,
+    club_expires_to: Optional[str] = None,
+    club_expiry_status: Optional[str] = Query(None, pattern="^(expired|expired_unpaid)$"),
     exclude_club: Optional[bool] = None,
     club_seller_name: Optional[str] = None,
     page: int = 1,
@@ -1098,18 +1129,40 @@ async def list_leads(
                                     income_max, trader_type, market, capital_min, capital_max, state, call_number,
                                     club_seller_type, deposit_status, deposit_min, deposit_max,
                                     broker_account_status, trading_mode, new_broker_name, current_broker_name,
-                                    club_seller_name, broker_name, broker_unique_id, exclude_club)
+                                    club_seller_name, broker_name, broker_unique_id,
+                                    club_joined_from, club_joined_to, club_expires_from, club_expires_to,
+                                    club_expiry_status, exclude_club)
     total, docs = await asyncio.gather(
         db.leads.count_documents(query),
         db.leads.find(query).sort("updated_at", -1)
         .skip(max(page - 1, 0) * limit).limit(limit).to_list(limit),
     )
+    assignee_stats = []
+    if "50-cr-club" in requested_tags:
+        grouped_stats = await db.leads.aggregate([
+            {"$match": query},
+            {"$group": {
+                "_id": "$assigned_to",
+                "name": {"$first": "$assigned_to_name"},
+                "total": {"$sum": 1},
+                "account_opened": {"$sum": {"$cond": [{"$eq": ["$broker_account_status", "opened"]}, 1, 0]}},
+                "deposit_made": {"$sum": {"$cond": [{"$eq": ["$deposit_made", True]}, 1, 0]}},
+            }},
+        ]).to_list(500)
+        assignee_stats = [{
+            "id": str(row["_id"]) if row.get("_id") else None,
+            "name": row.get("name") or ("Unassigned" if not row.get("_id") else "Unknown assignee"),
+            "total": row.get("total", 0),
+            "account_opened": row.get("account_opened", 0),
+            "deposit_made": row.get("deposit_made", 0),
+        } for row in grouped_stats]
     if "50-cr-club" in requested_tags and docs:
         lead_ids = [lead["_id"] for lead in docs]
         source_events = await db.payment_club_events.find({
             "source_record_type": "purchases", "verified": True,
             "lead_id": {"$in": lead_ids},
         }).sort([("payment.paid_at", -1), ("received_at", -1)]).to_list(10000)
+        source_events = await enrich_stored_vip_membership_dates(source_events)
         source_by_lead = {}
         for event in source_events:
             source_by_lead.setdefault(str(event["lead_id"]), event)
@@ -1117,8 +1170,82 @@ async def list_leads(
             source = source_by_lead.get(str(lead["_id"]))
             if source:
                 lead.update({key: value for key, value in club_source_lead_updates(source).items()
-                             if value is not None and lead.get(key) is None})
-    return {"total": total, "page": page, "items": [serialize(d) for d in docs]}
+                             if value is not None and (key in {"club_joined_at", "club_expires_at"}
+                                                       or lead.get(key) is None)})
+    return {"total": total, "page": page, "items": [serialize(d) for d in docs],
+            "assignee_stats": assignee_stats}
+
+
+@api.get("/leads/50-cr-club/export")
+async def export_50_cr_club_leads(assigned_to: Optional[str] = None,
+                                  user: dict = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can export 50 Cr Club leads")
+    if assigned_to not in (None, "none") and not ObjectId.is_valid(assigned_to):
+        raise HTTPException(status_code=400, detail="Invalid RM selection")
+    query = await build_lead_query(user, tags="50-cr-club", exclude_club=False)
+    leads = await db.leads.find(query).sort("updated_at", -1).to_list(20000)
+    event_by_lead = {}
+    if leads:
+        lead_ids = [lead["_id"] for lead in leads]
+        assigned_events = await db.payment_club_events.find({
+            "source_record_type": "purchases",
+            "verified": True,
+            "lead_id": {"$in": lead_ids},
+            "assigned_to_id": {"$ne": None},
+        }).sort([("payment.paid_at", -1), ("received_at", -1)]).to_list(20000)
+        for event in assigned_events:
+            event_by_lead.setdefault(str(event["lead_id"]), event)
+    if assigned_to == "none":
+        leads = [
+            lead for lead in leads
+            if not lead.get("assigned_to")
+            and not event_by_lead.get(str(lead["_id"]), {}).get("assigned_to_id")
+        ]
+    elif assigned_to:
+        leads = [
+            lead for lead in leads
+            if str(lead.get("assigned_to") or "") == assigned_to
+            or str(lead["_id"]) in event_by_lead
+            and str(event_by_lead[str(lead["_id"])].get("assigned_to_id")) == assigned_to
+        ]
+
+    async def csv_rows():
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow([
+            "Name", "Phone", "Email", "Joined", "Expires", "Seller type", "Seller name",
+            "Broker", "Broker ID", "Current broker", "New broker", "Account status",
+            "Deposit made", "Deposit amount", "Trading mode", "Expected group profit",
+            "Membership enabled", "Lead status", "Assigned RM", "Assigned RM ID",
+        ])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+        for lead in leads:
+            club_event = event_by_lead.get(str(lead["_id"])) or {}
+            assignee_id = lead.get("assigned_to") or club_event.get("assigned_to_id")
+            assignee_name = lead.get("assigned_to_name") or club_event.get("assigned_to_name")
+            writer.writerow([
+                lead.get("name"), lead.get("phone"), lead.get("email"),
+                lead.get("club_joined_at"), lead.get("club_expires_at"),
+                lead.get("club_seller_type"), lead.get("club_seller_name"),
+                lead.get("broker_name"), lead.get("broker_unique_id"),
+                lead.get("current_broker_name"), lead.get("new_broker_name"),
+                lead.get("broker_account_status"), lead.get("deposit_made"),
+                lead.get("deposit_amount"), lead.get("trading_mode"),
+                lead.get("expected_group_profit"), lead.get("membership_enabled"),
+                lead.get("status"), assignee_name, assignee_id,
+            ])
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    suffix = assigned_to if assigned_to and assigned_to != "none" else "all-rms"
+    return StreamingResponse(
+        csv_rows(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="50-cr-club-leads-{suffix}.csv"'},
+    )
 
 
 @api.get("/leads/duplicates")
@@ -2146,7 +2273,8 @@ async def list_50_cr_club_users(limit: int = Query(200, ge=1, le=500),
 
 
 @api.get("/payments/50-cr-club/my-leads")
-async def list_my_50_cr_club_leads(club_status: Optional[str] = Query(None, pattern="^(unworked|contacted|follow_up|enrolled|not_interested|lost)$"),
+async def list_my_50_cr_club_leads(background_tasks: BackgroundTasks,
+                                   club_status: Optional[str] = Query(None, pattern="^(unworked|contacted|follow_up|enrolled|not_interested|lost)$"),
                                    page: int = Query(1, ge=1),
                                    limit: int = Query(5000, ge=1, le=5000),
                                    user: dict = Depends(current_user)):
@@ -2154,6 +2282,8 @@ async def list_my_50_cr_club_leads(club_status: Optional[str] = Query(None, patt
         raise HTTPException(status_code=403, detail="Telecaller access only")
     if not user.get("is_50_cr_club_rm", False):
         raise HTTPException(status_code=403, detail="Only assigned 50 Cr Club RMs can access this page")
+    if ADMIN_PANEL_KEY:
+        background_tasks.add_task(refresh_50_cr_club_source_data, True)
     assigned_leads = await db.leads.find(
         {"assigned_to": ObjectId(user["id"]), "tags": "50-cr-club"},
         {"name": 1, "phone": 1, "email": 1, "status": 1, "assigned_to_name": 1},
@@ -2182,6 +2312,7 @@ async def list_my_50_cr_club_leads(club_status: Optional[str] = Query(None, patt
     events = await db.payment_club_events.find(event_query).sort(
         [("payment.paid_at", -1), ("received_at", -1)],
     ).skip((page - 1) * limit).limit(limit).to_list(limit)
+    events = await enrich_stored_vip_membership_dates(events)
     event_ids = [event["_id"] for event in events]
     event_lead_ids = list({event["lead_id"] for event in events if event.get("lead_id")})
     call_counts, latest_calls = {}, {}
@@ -2244,6 +2375,189 @@ async def list_my_50_cr_club_leads(club_status: Optional[str] = Query(None, patt
         item["last_dialed_at"] = latest_calls.get(str(event["_id"]))
         items.append(item)
     return {"items": items, "total": total, "page": page, "limit": limit}
+
+
+def build_club_monthly_revenue_report(events: list, current_month: Optional[str] = None) -> dict:
+    dated_events = []
+    for event in events:
+        payment = event.get("payment") or {}
+        raw_date = payment.get("paid_at") or event.get("received_at")
+        if isinstance(raw_date, datetime):
+            paid_date = raw_date
+        else:
+            try:
+                paid_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                continue
+        if paid_date.tzinfo is None:
+            paid_date = paid_date.replace(tzinfo=timezone.utc)
+        paid_date = paid_date.astimezone(TEAM_TZ)
+        payment_month = paid_date.strftime("%Y-%m")
+        contact = event.get("user") or {}
+        lead_id = event.get("lead_id")
+        client_keys = []
+        if lead_id:
+            client_keys.append(f"lead:{lead_id}")
+        if contact.get("external_id"):
+            client_keys.append(f"external:{contact['external_id']}")
+        if contact.get("email"):
+            client_keys.append(f"email:{str(contact['email']).strip().casefold()}")
+        normalized_phone = re.sub(r"\D", "", str(contact.get("phone") or ""))
+        if len(normalized_phone) >= 10:
+            normalized_phone = normalized_phone[-10:]
+        if normalized_phone:
+            client_keys.append(f"phone:{normalized_phone}")
+        if not client_keys:
+            client_keys.append(f"event:{event.get('_id')}")
+        amount = payment.get("amount")
+        try:
+            amount = float(amount) if amount is not None else 0.0
+        except (TypeError, ValueError):
+            amount = 0.0
+        currency = str(payment.get("currency") or "INR").upper()
+        dated_events.append((paid_date, event, client_keys, payment_month, amount, currency))
+
+    parents = {}
+
+    def find_client_root(key):
+        parents.setdefault(key, key)
+        if parents[key] != key:
+            parents[key] = find_client_root(parents[key])
+        return parents[key]
+
+    for _, _, client_keys, _, _, _ in dated_events:
+        for key in client_keys:
+            find_client_root(key)
+        for key in client_keys[1:]:
+            root = find_client_root(client_keys[0])
+            other_root = find_client_root(key)
+            if root != other_root:
+                parents[other_root] = root
+
+    dated_events = [
+        (paid_date, event, find_client_root(client_keys[0]), payment_month, amount, currency)
+        for paid_date, event, client_keys, payment_month, amount, currency in dated_events
+    ]
+
+    dated_events.sort(key=lambda row: (row[0], str(row[1].get("_id", ""))))
+    first_payment_by_client = {}
+    monthly_totals = {}
+    payment_rows = []
+    for paid_date, event, identity, payment_month, amount, currency in dated_events:
+        first_payment = first_payment_by_client.setdefault(identity, paid_date)
+        month_number = (paid_date.year - first_payment.year) * 12 + paid_date.month - first_payment.month
+        anniversary = (
+            min(first_payment.day, calendar.monthrange(paid_date.year, paid_date.month)[1]),
+            first_payment.hour,
+            first_payment.minute,
+            first_payment.second,
+            first_payment.microsecond,
+        )
+        if (paid_date.day, paid_date.hour, paid_date.minute, paid_date.second, paid_date.microsecond) < anniversary:
+            month_number -= 1
+        month_number = max(1, month_number + 1)
+        month_key = (payment_month, currency)
+        summary = monthly_totals.setdefault(month_key, {"revenue": 0.0, "payments": 0, "clients": set()})
+        summary["revenue"] += amount
+        summary["payments"] += 1
+        summary["clients"].add(identity)
+        payment = event.get("payment") or {}
+        contact = event.get("user") or {}
+        payment_rows.append({
+            "id": str(event.get("_id", "")),
+            "client": contact.get("name") or "Name not provided",
+            "phone": contact.get("phone"),
+            "paid_at": paid_date.isoformat(),
+            "month": payment_month,
+            "membership_month": month_number,
+            "amount": amount,
+            "currency": currency,
+            "payment_id": payment.get("payment_id"),
+        })
+
+    if current_month is None:
+        current_month = datetime.now(TEAM_TZ).strftime("%Y-%m")
+    month_currencies = sorted({currency for _, currency in monthly_totals}) or ["INR"]
+    earliest_month = min((month for month, _ in monthly_totals), default=current_month)
+    year, month = map(int, earliest_month.split("-"))
+    end_year, end_month = map(int, current_month.split("-"))
+    monthly = []
+    while (year, month) <= (end_year, end_month):
+        month_key = f"{year:04d}-{month:02d}"
+        for currency in month_currencies:
+            summary = monthly_totals.get((month_key, currency), {})
+            monthly.append({
+                "month": month_key,
+                "currency": currency,
+                "revenue": round(summary.get("revenue", 0.0), 2),
+                "payments": summary.get("payments", 0),
+                "clients": len(summary.get("clients", set())),
+            })
+        month += 1
+        if month == 13:
+            year += 1
+            month = 1
+    payment_rows.sort(key=lambda row: (row["paid_at"], row["id"]), reverse=True)
+    return {"monthly": monthly, "payments": payment_rows}
+
+
+@api.get("/payments/50-cr-club/my-revenue-report")
+async def get_my_50_cr_club_revenue_report(background_tasks: BackgroundTasks,
+                                           user: dict = Depends(current_user)):
+    if user["role"] != "telecaller" or not user.get("is_50_cr_club_rm", False):
+        raise HTTPException(status_code=403, detail="Only 50 Cr Club RMs can access this report")
+    if ADMIN_PANEL_KEY:
+        background_tasks.add_task(refresh_50_cr_club_source_data, True)
+
+    rm_id = ObjectId(user["id"])
+    assigned_leads = await db.leads.find(
+        {"assigned_to": rm_id, "tags": "50-cr-club"}, {"_id": 1},
+    ).to_list(5000)
+    lead_ids = [lead["_id"] for lead in assigned_leads]
+    assignment_scope = [{"assigned_to_id": rm_id}]
+    if lead_ids:
+        assignment_scope.append({
+            "lead_id": {"$in": lead_ids},
+            "$or": [{"assigned_to_id": {"$exists": False}}, {"assigned_to_id": None}],
+        })
+    assigned_events = await db.payment_club_events.find({
+        "source_record_type": "purchases",
+        "verified": True,
+        "$or": assignment_scope,
+    }).to_list(10000)
+
+    def client_keys(record: dict) -> set:
+        contact = record.get("user") or {}
+        keys = set()
+        if record.get("lead_id"):
+            keys.add(f"lead:{record['lead_id']}")
+        if contact.get("external_id"):
+            keys.add(f"external:{contact['external_id']}")
+        if contact.get("email"):
+            keys.add(f"email:{str(contact['email']).strip().lower()}")
+        phone = re.sub(r"\D", "", str(contact.get("phone") or ""))
+        if len(phone) >= 10:
+            phone = phone[-10:]
+        if phone:
+            keys.add(f"phone:{phone}")
+        return keys
+
+    assigned_client_keys = set().union(*(client_keys(event) for event in assigned_events)) if assigned_events else set()
+    if assigned_client_keys:
+        all_events = await db.payment_club_events.find({
+            "source_record_type": "purchases", "verified": True,
+        }).sort([("payment.paid_at", 1), ("received_at", 1)]).to_list(10000)
+        report_events = [event for event in all_events if client_keys(event) & assigned_client_keys]
+    else:
+        report_events = []
+    report = build_club_monthly_revenue_report(report_events)
+    sync_status = await db.settings.find_one({"_id": "50_cr_club_source_sync"}) or {}
+    return {
+        **report,
+        "last_synced_at": sync_status.get("last_success_at"),
+        "sync_errors": sync_status.get("errors") or {},
+        "auto_refresh_enabled": bool(ADMIN_PANEL_KEY),
+    }
 
 
 @api.post("/payments/50-cr-club/purchases/upload-sheet")
@@ -2654,7 +2968,11 @@ async def update_50_cr_club_purchase_status(event_id: str, payload: ClubPurchase
     if not event:
         raise HTTPException(status_code=404, detail="Verified 50 Cr Club purchase not found")
     if user["role"] == "telecaller":
-        if not user.get("is_50_cr_club_rm", False) or str(event.get("assigned_to_id")) != user["id"]:
+        assigned_to_id = event.get("assigned_to_id")
+        if not assigned_to_id and event.get("lead_id"):
+            lead = await db.leads.find_one({"_id": event["lead_id"]}, {"assigned_to": 1})
+            assigned_to_id = lead.get("assigned_to") if lead else None
+        if not user.get("is_50_cr_club_rm", False) or str(assigned_to_id) != user["id"]:
             raise HTTPException(status_code=403, detail="This Club purchase is not assigned to you")
     elif user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not permitted")
@@ -4724,6 +5042,110 @@ async def export_timeline(telecaller_id: str, period: str = "today", from_date: 
     stamp = datetime.now(TEAM_TZ).strftime("%Y%m%d-%H%M")
     return StreamingResponse(iter([buffer.getvalue()]), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="timeline-{name}-{stamp}.csv"'})
+
+
+SYSTEM_DATABASES = {"admin", "local", "config"}
+
+
+async def exportable_database_names():
+    names = await client.list_database_names()
+    return sorted(name for name in names if name not in SYSTEM_DATABASES)
+
+
+async def exportable_collection_names(database):
+    names = await database.list_collection_names()
+    return sorted(name for name in names if not name.startswith("system."))
+
+
+@api.get("/admin/export-database/preview")
+async def export_database_preview(user: dict = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    databases = {}
+    collections = {}
+    total = 0
+    collection_count = 0
+    for database_name in await exportable_database_names():
+        target = client[database_name]
+        per_db = {}
+        for collection_name in await exportable_collection_names(target):
+            count = await target[collection_name].count_documents({})
+            per_db[collection_name] = count
+            collections[f"{database_name}/{collection_name}"] = count
+            total += count
+            collection_count += 1
+        databases[database_name] = per_db
+    return {"primary_db": db.name, "databases": databases, "collections": collections,
+            "database_count": len(databases), "collection_count": collection_count,
+            "total_documents": total}
+
+
+@api.get("/admin/export-database")
+async def export_database(user: dict = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    database_names = await exportable_database_names()
+    handle = tempfile.NamedTemporaryFile(prefix="crm_export_", suffix=".zip", delete=False)
+    tmp_path = handle.name
+    handle.close()
+    db_counts = {}
+    indexes = {}
+    total = 0
+    collection_count = 0
+    try:
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
+            for database_name in database_names:
+                target = client[database_name]
+                db_counts[database_name] = {}
+                indexes[database_name] = {}
+                for collection_name in await exportable_collection_names(target):
+                    count = 0
+                    # Stream each collection into <db>/<collection>.json, one compact Extended-JSON
+                    # doc per line, flushed in batches (fast + memory-safe for very large collections).
+                    with archive.open(f"{database_name}/{collection_name}.json", "w") as entry:
+                        entry.write(b"[")
+                        first = True
+                        buffer = []
+                        cursor = target[collection_name].find({}, batch_size=2000)
+                        async for doc in cursor:
+                            buffer.append(("," if not first else "") + "\n" + json_util.dumps(doc))
+                            first = False
+                            count += 1
+                            if len(buffer) >= 2000:
+                                entry.write("".join(buffer).encode("utf-8"))
+                                buffer = []
+                        if buffer:
+                            entry.write("".join(buffer).encode("utf-8"))
+                        entry.write(b"\n]\n")
+                    db_counts[database_name][collection_name] = count
+                    total += count
+                    collection_count += 1
+                    try:
+                        indexes[database_name][collection_name] = await target[collection_name].index_information()
+                    except Exception:
+                        indexes[database_name][collection_name] = {}
+            manifest = {
+                "primary_db": db.name,
+                "exported_at": iso(utcnow()),
+                "exported_by": user.get("email"),
+                "databases": db_counts,
+                "database_count": len(database_names),
+                "collection_count": collection_count,
+                "total_documents": total,
+            }
+            archive.writestr("_manifest.json", json_util.dumps(manifest, indent=2))
+            archive.writestr("_indexes.json", json_util.dumps(indexes, indent=2))
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+    await log_activity("admin_db_export", user,
+                       detail=f"Admin exported full database ({len(database_names)} database(s), "
+                              f"{collection_count} collections, {total} documents)")
+    stamp = datetime.now(TEAM_TZ).strftime("%Y%m%d_%H%M%S")
+    filename = f"crm_export_{db.name}_{stamp}.zip"
+    return FileResponse(tmp_path, media_type="application/zip", filename=filename,
+                        background=BackgroundTask(os.remove, tmp_path))
 
 
 app.include_router(api)

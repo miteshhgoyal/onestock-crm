@@ -235,6 +235,30 @@ def test_club_lead_filters_are_applied_before_pagination(monkeypatch):
     assert {"tags": {"$nin": ["50-cr-club"]}} in query["$and"]
 
 
+def test_club_date_range_and_expiry_filters_are_applied(monkeypatch):
+    async def empty_scope(_user):
+        return {}
+
+    monkeypatch.setattr("server.lead_scope", empty_scope)
+    query = asyncio.run(build_lead_query(
+        {"role": "admin"},
+        tags="50-cr-club",
+        club_seller_type="direct",
+        club_joined_from="2026-01-01",
+        club_joined_to="2026-02-01",
+        club_expires_from="2026-09-01",
+        club_expires_to="2026-10-15",
+        club_expiry_status="expired_unpaid",
+        exclude_club=True,
+    ))
+
+    assert query["tags"] == {"$all": ["50-cr-club"]}
+    assert any(item.get("club_joined_at") == {"$gte": "2026-01-01", "$lt": "2026-02-01T24"} for item in query.get("$and", []))
+    assert any(item.get("club_expires_at") == {"$gte": "2026-09-01", "$lt": "2026-10-15T24"} for item in query.get("$and", []))
+    assert any(item.get("club_expires_at") == {"$lt": "2026-10-28"} and item.get("deposit_made") is False for item in query.get("$and", []))
+    assert {"tags": {"$nin": ["50-cr-club"]}} in query["$and"]
+
+
 def test_club_unworked_bucket_only_selects_assigned_club_leads(monkeypatch):
     async def empty_scope(_user):
         return {}
@@ -243,6 +267,7 @@ def test_club_unworked_bucket_only_selects_assigned_club_leads(monkeypatch):
     query = asyncio.run(build_lead_query({"role": "telecaller"}, bucket="club_unworked"))
     assert query["status"] == "assigned"
     assert query["tags"] == {"$all": ["50-cr-club"]}
+    assert any(item.get("assigned_to") == {"$ne": None} for item in query.get("$and", []))
 
 
 def test_club_conversion_auto_approval_only_after_verified_source_result(monkeypatch):

@@ -90,6 +90,10 @@ frontend/node_modules/.cache/default-development/2.pack
 credentials.json
 *.key
 .credentials
+
+# Database exports (contain password hashes + customer data — never commit)
+crm_export_*.zip
+export/
 frontend/node_modules/.cache/default-development/6.pack
 frontend/node_modules/.cache/default-development/4.pack
 frontend/node_modules/.cache/default-development/7.pack

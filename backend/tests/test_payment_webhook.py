@@ -5,21 +5,150 @@ from types import SimpleNamespace
 
 import pytest
 from bson import ObjectId
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from starlette.datastructures import UploadFile
 
 from server import (
     enrich_stored_vip_membership_dates,
     enrich_vip_membership_contacts,
+    build_club_monthly_revenue_report,
     export_50_cr_club_membership_dates,
+    export_50_cr_club_leads,
     extract_admin_records,
     fetch_vip_market_records,
     filter_verified_vip_records,
     normalize_payment_event,
     normalize_vip_market_record,
     update_50_cr_club_member_profile,
+    update_50_cr_club_purchase_status,
+    get_my_50_cr_club_revenue_report,
 )
-from models import ClubMemberProfileUpdate
+from models import ClubMemberProfileUpdate, ClubPurchaseStatusUpdate
+
+
+def test_club_revenue_counts_after_anniversary_as_next_membership_month():
+    events = [
+        {
+            "_id": "first", "source_record_type": "purchases", "verified": True,
+            "user": {"email": "member@example.com", "name": "Member"},
+            "payment": {"paid_at": "2026-01-25T10:00:00+05:30", "amount": 100, "currency": "INR"},
+        },
+        {
+            "_id": "early", "source_record_type": "purchases", "verified": True,
+            "user": {"email": "member@example.com", "name": "Member"},
+            "payment": {"paid_at": "2026-02-24T10:00:00+05:30", "amount": 200, "currency": "INR"},
+        },
+        {
+            "_id": "renewal", "source_record_type": "purchases", "verified": True,
+            "user": {"email": "member@example.com", "name": "Member"},
+            "payment": {"paid_at": "2026-02-25T10:00:00+05:30", "amount": 300, "currency": "INR"},
+        },
+    ]
+
+    report = build_club_monthly_revenue_report(events, current_month="2026-02")
+
+    membership_months = {payment["id"]: payment["membership_month"] for payment in report["payments"]}
+    assert membership_months == {"first": 1, "early": 1, "renewal": 2}
+    february = next(month for month in report["monthly"] if month["month"] == "2026-02")
+    assert february["revenue"] == 500
+    assert february["payments"] == 2
+
+
+def test_club_revenue_matches_recurring_payment_without_linked_lead_id():
+    events = [
+        {
+            "_id": "first", "lead_id": "lead-1",
+            "user": {"phone": "+91 98765 43210", "email": "member@example.com"},
+            "payment": {"paid_at": "2026-01-25T10:00:00+05:30", "amount": 100, "currency": "INR"},
+        },
+        {
+            "_id": "renewal",
+            "user": {"phone": "9876543210", "email": "MEMBER@example.com"},
+            "payment": {"paid_at": "2026-02-25T10:00:00+05:30", "amount": 300, "currency": "INR"},
+        },
+    ]
+
+    report = build_club_monthly_revenue_report(events, current_month="2026-02")
+
+    membership_months = {payment["id"]: payment["membership_month"] for payment in report["payments"]}
+    assert membership_months == {"first": 1, "renewal": 2}
+
+
+def test_non_rm_cannot_open_club_revenue_report():
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(get_my_50_cr_club_revenue_report(
+            BackgroundTasks(), {"role": "telecaller", "is_50_cr_club_rm": False},
+        ))
+
+    assert error.value.status_code == 403
+
+
+def test_non_admin_cannot_export_club_leads():
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(export_50_cr_club_leads(user={"role": "telecaller"}))
+
+    assert error.value.status_code == 403
+
+
+def test_admin_club_export_matches_rm_by_crm_or_purchase_assignment(monkeypatch):
+    rm_id = ObjectId()
+    other_rm_id = ObjectId()
+    crm_assigned_id = ObjectId()
+    purchase_assigned_id = ObjectId()
+    unassigned_id = ObjectId()
+    leads = [
+        {"_id": crm_assigned_id, "name": "CRM assigned", "assigned_to": rm_id,
+         "assigned_to_name": "RM One", "tags": ["50-cr-club"]},
+        {"_id": purchase_assigned_id, "name": "Purchase assigned", "assigned_to": None,
+         "tags": ["50-cr-club"]},
+        {"_id": unassigned_id, "name": "Truly unassigned", "assigned_to": None,
+         "tags": ["50-cr-club"]},
+        {"_id": ObjectId(), "name": "Other RM", "assigned_to": other_rm_id,
+         "tags": ["50-cr-club"]},
+    ]
+    events = [{
+        "_id": ObjectId(), "lead_id": purchase_assigned_id,
+        "assigned_to_id": rm_id, "assigned_to_name": "RM One",
+        "source_record_type": "purchases", "verified": True,
+    }]
+
+    class Cursor:
+        def __init__(self, documents):
+            self.documents = documents
+
+        def sort(self, *_args):
+            return self
+
+        async def to_list(self, _limit):
+            return self.documents
+
+    class Collection:
+        def __init__(self, documents):
+            self.documents = documents
+
+        def find(self, _query):
+            return Cursor(self.documents)
+
+    monkeypatch.setattr("server.db", SimpleNamespace(
+        leads=Collection(leads), payment_club_events=Collection(events),
+    ))
+
+    async def download(assignee):
+        response = await export_50_cr_club_leads(
+            assigned_to=assignee, user={"role": "admin"},
+        )
+        chunks = [chunk async for chunk in response.body_iterator]
+        return "".join(chunk.decode() if isinstance(chunk, bytes) else chunk for chunk in chunks)
+
+    rm_csv = asyncio.run(download(str(rm_id)))
+    unassigned_csv = asyncio.run(download("none"))
+
+    assert "CRM assigned" in rm_csv
+    assert "Purchase assigned" in rm_csv
+    assert "Other RM" not in rm_csv
+    assert "Truly unassigned" not in rm_csv
+    assert "Truly unassigned" in unassigned_csv
+    assert "Purchase assigned" not in unassigned_csv
 
 
 def test_normalize_payment_event_extracts_user_and_payment_summary():
@@ -213,13 +342,13 @@ def test_refreshed_membership_dates_update_linked_verified_purchase_and_crm_lead
             return [membership]
 
     class Events:
-        update = None
+        operations = []
 
         def find(self, _query):
             return Cursor()
 
-        async def update_one(self, query, update):
-            self.update = (query, update)
+        async def bulk_write(self, operations, ordered=False):
+            self.operations = operations
 
     class Leads:
         operations = []
@@ -235,7 +364,7 @@ def test_refreshed_membership_dates_update_linked_verified_purchase_and_crm_lead
 
     assert result[0]["club"]["expires_at"] == "2027-10-26"
     assert result[0]["member_profile"]["expires_at"] == "2027-10-26"
-    assert events.update[1]["$set"]["club.expires_at"] == "2027-10-26"
+    assert events.operations[0]._doc["$set"]["club.expires_at"] == "2027-10-26"
     assert leads.operations[0]._filter == {"_id": lead_id}
     assert leads.operations[0]._doc["$set"]["club_expires_at"] == "2027-10-26"
 
@@ -347,12 +476,48 @@ def test_telecaller_can_update_owned_club_member_profile(monkeypatch):
     updated = asyncio.run(update_50_cr_club_member_profile(
         str(event_id),
         ClubMemberProfileUpdate(broker_name="Zerodha", membership_enabled=True),
-        {"role": "telecaller", "id": str(caller_id), "name": "Caller"},
+        {"role": "telecaller", "id": str(caller_id), "name": "Caller", "is_50_cr_club_rm": True},
     ))
 
     assert updated["member_profile"]["broker_name"] == "Zerodha"
     assert updated["member_profile"]["membership_enabled"] is True
     assert updated["member_profile"]["updated_by"] == str(caller_id)
+
+
+def test_telecaller_can_update_status_via_assigned_linked_lead(monkeypatch):
+    class FakeCollection:
+        def __init__(self, document):
+            self.document = document
+
+        async def find_one(self, query, projection=None):
+            if query.get("_id") != self.document["_id"]:
+                return None
+            if query.get("source_record_type") and query["source_record_type"] != self.document.get("source_record_type"):
+                return None
+            if query.get("verified") is not None and query["verified"] != self.document.get("verified"):
+                return None
+            return self.document
+
+        async def update_one(self, query, update):
+            self.document.update(update["$set"])
+
+    event_id = ObjectId()
+    lead_id = ObjectId()
+    caller_id = ObjectId()
+    event = {"_id": event_id, "source_record_type": "purchases", "verified": True, "lead_id": lead_id}
+    fake_db = SimpleNamespace(
+        payment_club_events=FakeCollection(event),
+        leads=FakeCollection({"_id": lead_id, "assigned_to": caller_id}),
+    )
+    monkeypatch.setattr("server.db", fake_db)
+
+    updated = asyncio.run(update_50_cr_club_purchase_status(
+        str(event_id), ClubPurchaseStatusUpdate(status="contacted"),
+        {"role": "telecaller", "is_50_cr_club_rm": True, "id": str(caller_id), "name": "RM"},
+    ))
+
+    assert updated["club_status"] == "contacted"
+    assert event["club_status_updated_by"] == str(caller_id)
 
 
 def test_telecaller_cannot_update_another_callers_club_member(monkeypatch):
