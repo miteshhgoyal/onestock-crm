@@ -1,52 +1,7 @@
 [
-  {
-    "_id": {
-      "$oid": "6aa7ec4a9647bdd4b22673fc"
-    },
-    "name": "Buniyaad Offline",
-    "active": true,
-    "created_at": {
-      "$date": "2026-09-14T12:44:58.919Z"
-    }
-  },
-  {
-    "_id": {
-      "$oid": "6aa7ec549647bdd4b22673fd"
-    },
-    "name": "Buniyaad Online",
-    "active": true,
-    "created_at": {
-      "$date": "2026-09-14T12:45:08.427Z"
-    }
-  },
-  {
-    "_id": {
-      "$oid": "6aae1d605e55ae37763ff48f"
-    },
-    "name": "Aryabhhatt",
-    "active": true,
-    "created_at": {
-      "$date": "2026-09-19T05:28:00.672Z"
-    }
-  },
-  {
-    "_id": {
-      "$oid": "6ab7686195582305914e63d8"
-    },
-    "name": "50Cr Club",
-    "active": true,
-    "created_at": {
-      "$date": "2026-09-26T06:38:25.400Z"
-    }
-  },
-  {
-    "_id": {
-      "$oid": "6aba4aa43c9327fdd325ae5a"
-    },
-    "name": "50crConverted",
-    "active": true,
-    "created_at": {
-      "$date": "2026-09-28T11:08:20.272Z"
-    }
-  }
+{"_id": {"$oid": "6aa7ec4a9647bdd4b22673fc"}, "name": "Buniyaad Offline", "active": true, "created_at": {"$date": "2026-09-14T12:44:58.919Z"}},
+{"_id": {"$oid": "6aa7ec549647bdd4b22673fd"}, "name": "Buniyaad Online", "active": true, "created_at": {"$date": "2026-09-14T12:45:08.427Z"}},
+{"_id": {"$oid": "6aae1d605e55ae37763ff48f"}, "name": "Aryabhhatt", "active": true, "created_at": {"$date": "2026-09-19T05:28:00.672Z"}},
+{"_id": {"$oid": "6ab7686195582305914e63d8"}, "name": "50Cr Club", "active": true, "created_at": {"$date": "2026-09-26T06:38:25.400Z"}},
+{"_id": {"$oid": "6aba4aa43c9327fdd325ae5a"}, "name": "50crConverted", "active": true, "created_at": {"$date": "2026-09-28T11:08:20.272Z"}}
 ]
