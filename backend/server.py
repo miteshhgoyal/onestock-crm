@@ -1132,6 +1132,69 @@ async def list_leads(
                                     club_seller_name, broker_name, broker_unique_id,
                                     club_joined_from, club_joined_to, club_expires_from, club_expires_to,
                                     club_expiry_status, exclude_club)
+    is_club_lead_list = "50-cr-club" in requested_tags
+    if is_club_lead_list and (assigned_to or club_expiry_status):
+        event_scope = {
+            "source_record_type": "purchases",
+            "verified": True,
+            "lead_id": {"$ne": None},
+        }
+        assignment_event_lead_ids = set()
+        assigned_event_lead_ids = set()
+        if assigned_to:
+            assigned_events = await db.payment_club_events.find(
+                {**event_scope, "assigned_to_id": {"$ne": None}},
+                {"lead_id": 1, "assigned_to_id": 1},
+            ).to_list(20000)
+            assigned_event_lead_ids = {event["lead_id"] for event in assigned_events if event.get("lead_id")}
+            if assigned_to != "none":
+                assignment_event_lead_ids = {
+                    event["lead_id"] for event in assigned_events
+                    if event.get("lead_id") and str(event.get("assigned_to_id")) == assigned_to
+                }
+
+            query.pop("assigned_to", None)
+            if assigned_to == "none":
+                assignment_condition = {
+                    "assigned_to": None,
+                    "_id": {"$nin": list(assigned_event_lead_ids)},
+                }
+            else:
+                assignment_condition = {"$or": [
+                    {"assigned_to": oid(assigned_to), "_id": {"$nin": list(assigned_event_lead_ids)}},
+                    {"_id": {"$in": list(assignment_event_lead_ids)}},
+                ]}
+            query.setdefault("$and", []).append(assignment_condition)
+
+        if club_expiry_status:
+            today = utcnow().date().isoformat()
+            expiry_event_query = {**event_scope, "$or": [
+                {"club.expires_at": {"$lt": today}},
+                {"member_profile.expires_at": {"$lt": today}},
+            ]}
+            if club_expiry_status == "expired_unpaid":
+                expiry_event_query["$and"] = [
+                    {"club.deposit_made": {"$ne": True}},
+                    {"member_profile.deposit_made": {"$ne": True}},
+                ]
+            expiry_event_lead_ids = {
+                event["lead_id"] for event in await db.payment_club_events.find(
+                    expiry_event_query, {"lead_id": 1},
+                ).to_list(20000) if event.get("lead_id")
+            }
+
+            query["$and"] = [condition for condition in query.get("$and", []) if not (
+                condition.get("club_expires_at", {}).get("$lt") == today
+            )]
+            if not query["$and"]:
+                query.pop("$and")
+            lead_expiry_filter = {"club_expires_at": {"$lt": today}}
+            if club_expiry_status == "expired_unpaid":
+                lead_expiry_filter["deposit_made"] = {"$ne": True}
+            query.setdefault("$and", []).append({"$or": [
+                lead_expiry_filter,
+                {"_id": {"$in": list(expiry_event_lead_ids)}},
+            ]})
     total, docs = await asyncio.gather(
         db.leads.count_documents(query),
         db.leads.find(query).sort("updated_at", -1)
@@ -1164,14 +1227,23 @@ async def list_leads(
         }).sort([("payment.paid_at", -1), ("received_at", -1)]).to_list(10000)
         source_events = await enrich_stored_vip_membership_dates(source_events)
         source_by_lead = {}
+        assigned_source_by_lead = {}
         for event in source_events:
-            source_by_lead.setdefault(str(event["lead_id"]), event)
+            lead_key = str(event["lead_id"])
+            source_by_lead.setdefault(lead_key, event)
+            if event.get("assigned_to_id"):
+                assigned_source_by_lead.setdefault(lead_key, event)
         for lead in docs:
-            source = source_by_lead.get(str(lead["_id"]))
+            lead_key = str(lead["_id"])
+            source = source_by_lead.get(lead_key)
             if source:
                 lead.update({key: value for key, value in club_source_lead_updates(source).items()
                              if value is not None and (key in {"club_joined_at", "club_expires_at"}
                                                        or lead.get(key) is None)})
+            assigned_source = assigned_source_by_lead.get(lead_key)
+            if assigned_source:
+                lead["assigned_to_name"] = assigned_source.get("assigned_to_name") or lead.get("assigned_to_name")
+                lead["assigned_to_id"] = str(assigned_source["assigned_to_id"])
     return {"total": total, "page": page, "items": [serialize(d) for d in docs],
             "assignee_stats": assignee_stats}
 
@@ -2622,7 +2694,7 @@ async def upload_50_cr_club_sheet(
             skipped += 1
             if len(row_errors) < 20:
                 phone_error = "phone appears rounded in scientific notation; export full digits as text" if "e" in raw_phone.lower() else "phone must contain 10–15 digits"
-            row_errors.append(f"Row {row_number}: {phone_error}, email, or name is required")
+                row_errors.append(f"Row {row_number}: {phone_error}, email, or name is required")
             continue
         contact_key = email if email else phone
         if contact_key in seen_contacts:
