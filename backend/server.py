@@ -65,7 +65,7 @@ SMARTFLO_WEBHOOK_SECRET = os.environ.get("SMARTFLO_WEBHOOK_SECRET")
 PAYMENT_WEBHOOK_TOKEN = os.environ.get("PAYMENT_WEBHOOK_TOKEN")
 ADMIN_PANEL_KEY = os.environ.get("ADMIN_PANEL_KEY")
 VIP_MARKET_ADMIN_URL = os.environ.get(
-    "VIP_MARKET_ADMIN_URL", "",
+    "VIP_MARKET_ADMIN_URL", "https://vip-market-edge.emergent.host/api/admin",
 ).rstrip("/")
 VIP_MARKET_TIMEOUT_SECONDS = float(os.environ.get("VIP_MARKET_TIMEOUT_SECONDS", "600"))
 ONLINE_WINDOW = timedelta(minutes=5)
