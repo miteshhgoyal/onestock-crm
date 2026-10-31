@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowUpRight, ListRestart, Pencil, PhoneCall, Save, Search } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { fmtDate, relative } from "@/lib/constants";
+import { fmtDate, relative, isLeadUnworked } from "@/lib/constants";
+import { useRealtimeEvent } from "@/lib/realtime";
 import StatusBadge from "@/components/StatusBadge";
 import LeadPanel from "@/components/LeadPanel";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,27 @@ const CLUB_STATUS_LABEL = {
 };
 
 const sourceDate = (value) => value ? String(value).match(/^\d{4}-\d{2}-\d{2}/)?.[0] || String(value) : "—";
+
+const matchesBucket = (lead, b, m) => {
+  if (!lead) return false;
+  if (m === "club") {
+    return b ? lead.status === b : true;
+  }
+  if (b === "untouched") {
+    return isLeadUnworked(lead);
+  }
+  if (b === "today") {
+    if (!lead.next_follow_up_at) return false;
+    const d = new Date(lead.next_follow_up_at);
+    const now = new Date();
+    return d.toDateString() === now.toDateString();
+  }
+  if (b === "overdue") {
+    if (!lead.next_follow_up_at) return false;
+    return new Date(lead.next_follow_up_at) < new Date() && !["converted", "lost", "not_interested"].includes(lead.status);
+  }
+  return true;
+};
 
 const TABS = [
   ["untouched", "Unworked"],
@@ -61,10 +83,14 @@ export default function Workspace() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const activeBucket = mode === "club" ? clubBucket : bucket;
+  const recentOriginIds = useRef(new Set());
 
-  const load = useCallback(async (requestedPage = page) => {
+  const load = useCallback(async (requestedPage = page, force = false) => {
     setLoadingMore(requestedPage > 1);
     try {
+      if (force) {
+        await queryClient.invalidateQueries({ queryKey: ["workspace-queue", user?.id] });
+      }
       const result = await queryClient.fetchQuery({
         queryKey: ["workspace-queue", user?.id, mode, activeBucket, requestedPage],
         queryFn: async () => {
@@ -89,7 +115,7 @@ export default function Workspace() {
           });
           return data;
         },
-        staleTime: 30_000,
+        staleTime: force ? 0 : 30_000,
       });
       const pageItems = result.items || [];
       setItems((current) => requestedPage === 1
@@ -125,6 +151,108 @@ export default function Workspace() {
     if (!needle) return queueItems;
     return queueItems.filter((lead) => [lead.name, lead.phone, lead.email].some((value) => value?.toLowerCase().includes(needle)));
   }, [queueItems, query]);
+
+  const handleLeadSaved = useCallback((updatedLead, meta = {}) => {
+    if (!updatedLead || !updatedLead.id) return;
+    if (meta.originId) {
+      recentOriginIds.current.add(meta.originId);
+      setTimeout(() => recentOriginIds.current.delete(meta.originId), 30000);
+    }
+
+    const leadBelongs = matchesBucket(updatedLead, activeBucket, mode);
+
+    setItems((current) => {
+      const idx = current.findIndex((item) => item.id === updatedLead.id);
+      if (idx >= 0) {
+        if (!leadBelongs) {
+          return current.filter((item) => item.id !== updatedLead.id);
+        } else {
+          const next = [...current];
+          next[idx] = { ...next[idx], ...updatedLead };
+          return next;
+        }
+      } else if (leadBelongs && activeBucket !== "untouched") {
+        return [updatedLead, ...current];
+      }
+      return current;
+    });
+
+    if (!leadBelongs) {
+      setTotalCount((c) => Math.max(0, c - 1));
+      setActive((currentActive) => {
+        if (currentActive === updatedLead.id) {
+          const remaining = items.filter((item) => item.id !== updatedLead.id);
+          const currentIndex = filteredItems.findIndex((item) => item.id === updatedLead.id);
+          const nextItem = filteredItems[currentIndex + 1] || filteredItems[currentIndex - 1] || remaining[0];
+          return nextItem ? nextItem.id : null;
+        }
+        return currentActive;
+      });
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["workspace-queue", user?.id] });
+  }, [activeBucket, mode, items, filteredItems, queryClient, user?.id]);
+
+  const handleLeadRollback = useCallback((previousLead) => {
+    if (!previousLead) return;
+    setItems((current) => {
+      const exists = current.some((item) => item.id === previousLead.id);
+      if (!exists) {
+        return [previousLead, ...current];
+      }
+      return current.map((item) => (item.id === previousLead.id ? previousLead : item));
+    });
+    setTotalCount((c) => c + 1);
+    setActive(previousLead.id);
+    queryClient.invalidateQueries({ queryKey: ["workspace-queue", user?.id] });
+  }, [queryClient, user?.id]);
+
+  useRealtimeEvent("lead:updated", useCallback((event) => {
+    const { lead: incomingLead, origin_id } = event || {};
+    if (!incomingLead || !incomingLead.id) return;
+    if (origin_id && recentOriginIds.current.has(origin_id)) {
+      return;
+    }
+
+    const leadBelongs = matchesBucket(incomingLead, activeBucket, mode);
+
+    setItems((current) => {
+      const idx = current.findIndex((item) => item.id === incomingLead.id);
+      if (idx >= 0) {
+        if (!leadBelongs) {
+          return current.filter((item) => item.id !== incomingLead.id);
+        } else {
+          const next = [...current];
+          next[idx] = { ...next[idx], ...incomingLead };
+          return next;
+        }
+      } else if (leadBelongs && activeBucket !== "untouched") {
+        return [incomingLead, ...current];
+      }
+      return current;
+    });
+
+    if (!leadBelongs) {
+      setTotalCount((c) => Math.max(0, c - 1));
+      setActive((currentActive) => {
+        if (currentActive === incomingLead.id) {
+          toast.info(`${incomingLead.name || "Active lead"} was updated from another session`);
+          const remaining = items.filter((item) => item.id !== incomingLead.id);
+          return remaining[0]?.id || null;
+        }
+        return currentActive;
+      });
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["workspace-queue", user?.id] });
+  }, [activeBucket, mode, items, queryClient, user?.id]));
+
+  // Auto-backfill if loaded list gets short
+  useEffect(() => {
+    if (items.length > 0 && items.length < 20 && hasMore && !loadingMore) {
+      load(page + 1);
+    }
+  }, [items.length, hasMore, loadingMore, page, load]);
 
   const nextCall = () => {
     const currentIndex = filteredItems.findIndex((lead) => lead.id === active);
@@ -407,7 +535,15 @@ export default function Workspace() {
                 </Select>
               </div>
               <div className="text-sm"><div className="overline">RM dial activity</div><div className="mono mt-2">{activeLead.call_count || 0} calls · Last dialed {activeLead.last_dialed_at ? fmtDate(activeLead.last_dialed_at) : "never"}</div></div>
-            </section> : <LeadPanel leadId={active} courses={courses} onChanged={load} />}
+            </section> : (
+              <LeadPanel
+                leadId={active}
+                courses={courses}
+                onChanged={handleLeadSaved}
+                onOptimisticUpdate={handleLeadSaved}
+                onRollback={handleLeadRollback}
+              />
+            )}
           </>
         ) : (
           <div className="flex h-full min-h-[420px] items-center justify-center px-6 text-center text-sm text-muted-foreground">

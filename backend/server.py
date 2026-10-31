@@ -43,7 +43,7 @@ from models import (Activity, AssignRequest, AutoAssignRequest, BulkLeadDeleteRe
                     TeamCreate, User, UserCreate, UserUpdate, CrmActivity, Document,
                     CrmActivityCreate, CrmActivityUpdate, ConversionApproval, ChatMessage,
                     ChatMessageCreate, CAPITAL_RANGES, INCOME_BRACKETS, MARKETS, OCCUPATIONS, TRADER_TYPES,
-                    TRADING_EXPERIENCE, utcnow)
+                    TRADING_EXPERIENCE, utcnow, UNWORKED_STATUSES, is_lead_worked, is_lead_unworked)
 from storage import delete_object, get_object, init_storage, put_object  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -355,6 +355,86 @@ async def lead_scope(user: dict) -> dict:
     return {"assigned_to": ObjectId(user["id"])}
 
 
+class RealtimeBroadcaster:
+    """
+    Lightweight Server-Sent Events (SSE) broadcaster for realtime CRM updates.
+    Events are strictly scoped to prevent unauthorized data leaks.
+    """
+    def __init__(self):
+        self._connections: dict[str, set[asyncio.Queue]] = {}
+        self._user_roles: dict[str, str] = {}
+        self._lock = asyncio.Lock()
+
+    async def connect(self, user_id: str, role: str) -> asyncio.Queue:
+        queue = asyncio.Queue(maxsize=100)
+        async with self._lock:
+            self._connections.setdefault(user_id, set()).add(queue)
+            self._user_roles[user_id] = role
+        logger.info(f"Realtime connected: user {user_id} ({role}). Total listeners: {sum(len(q) for q in self._connections.values())}")
+        return queue
+
+    async def disconnect(self, user_id: str, queue: asyncio.Queue):
+        async with self._lock:
+            if user_id in self._connections:
+                self._connections[user_id].discard(queue)
+                if not self._connections[user_id]:
+                    self._connections.pop(user_id, None)
+                    self._user_roles.pop(user_id, None)
+
+    async def broadcast_lead_event(self, event_name: str, lead: dict, origin_id: Optional[str] = None):
+        """
+        Broadcast lead event strictly scoped:
+        - The assigned telecaller (lead['assigned_to'])
+        - All admins and subadmins
+        - Team leader of the lead's team (if lead['team_id'])
+        """
+        if not lead:
+            return
+
+        assigned_to_id = str(lead.get("assigned_to")) if lead.get("assigned_to") else None
+        team_id = str(lead.get("team_id")) if lead.get("team_id") else None
+
+        payload = {
+            "type": event_name,
+            "lead": serialize(lead) if isinstance(lead, dict) else lead,
+            "origin_id": origin_id,
+            "timestamp": utcnow().isoformat(),
+        }
+        msg = f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+
+        team_leader_id = None
+        if team_id and ObjectId.is_valid(team_id):
+            team_doc = await db.teams.find_one({"_id": oid(team_id)}, {"leader_id": 1})
+            if team_doc and team_doc.get("leader_id"):
+                team_leader_id = str(team_doc["leader_id"])
+
+        async with self._lock:
+            for uid, queues in list(self._connections.items()):
+                role = self._user_roles.get(uid, "")
+                should_receive = False
+
+                if role in ("admin", "subadmin"):
+                    should_receive = True
+                elif assigned_to_id and uid == assigned_to_id:
+                    should_receive = True
+                elif team_leader_id and uid == team_leader_id:
+                    should_receive = True
+
+                if should_receive:
+                    for q in list(queues):
+                        try:
+                            q.put_nowait(msg)
+                        except asyncio.QueueFull:
+                            try:
+                                q.get_nowait()
+                                q.put_nowait(msg)
+                            except Exception:
+                                pass
+
+
+realtime_broadcaster = RealtimeBroadcaster()
+
+
 async def log_activity(action: str, actor: Optional[dict], lead: Optional[dict] = None,
                        detail: Optional[str] = None, status_from: Optional[str] = None,
                        status_to: Optional[str] = None):
@@ -406,6 +486,8 @@ async def apply_assignment(lead: dict, assignee: dict, actor: Optional[dict], re
     if inc:
         ops["$inc"] = inc
     await db.leads.update_one({"_id": lead["_id"]}, ops)
+    updated = await db.leads.find_one({"_id": lead["_id"]})
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated)
     await log_activity(reason, actor, lead, f"Assigned to {assignee['name']}")
     if update.get("status") and update["status"] != lead.get("status"):
         await log_activity("status_changed", actor, lead,
@@ -1068,7 +1150,22 @@ async def build_lead_query(user: dict, status=None, source=None, assigned_to=Non
         query["last_action_at"] = {"$lt": now - timedelta(hours=24)}
     elif bucket in ("untouched", "club_unworked"):
         query.setdefault("$and", []).append({"assigned_to": {"$ne": None}})
-        query["status"] = "assigned"
+        query["status"] = {"$in": list(UNWORKED_STATUSES)}
+        query.setdefault("$and", []).append({
+            "$or": [
+                {"last_call_outcome": None},
+                {"last_call_outcome": {"$exists": False}},
+            ]
+        })
+        call_outcome_lead_ids = await db.call_attempts.distinct("lead_id", {
+            "lead_id": {"$ne": None},
+            "$or": [
+                {"call_outcome": {"$exists": True, "$ne": None}},
+                {"manual_call_outcome": {"$exists": True, "$ne": None}},
+            ]
+        })
+        if call_outcome_lead_ids:
+            query.setdefault("$and", []).append({"_id": {"$nin": call_outcome_lead_ids}})
         if bucket == "club_unworked":
             query["tags"] = {"$all": ["50-cr-club"]}
     elif bucket == "inactive":
@@ -3223,6 +3320,7 @@ async def get_lead(lead_id: str, user: dict = Depends(current_user)):
 
 @api.patch("/leads/{lead_id}/calls/{call_id}")
 async def update_call_outcome(lead_id: str, call_id: str, payload: CallOutcomeUpdate,
+                              request: Request,
                               user: dict = Depends(current_user)):
     lead = await db.leads.find_one({"_id": oid(lead_id), **await lead_scope(user)})
     if not lead:
@@ -3231,8 +3329,7 @@ async def update_call_outcome(lead_id: str, call_id: str, payload: CallOutcomeUp
         raise HTTPException(status_code=403, detail="Not permitted")
     if payload.call_outcome not in {"connected", "not_connected"}:
         raise HTTPException(status_code=400, detail="Invalid call outcome")
-    post_call_statuses = {"interested", "not_interested", "follow_up", "converted", "lost"}
-    if payload.status and payload.status not in post_call_statuses:
+    if payload.status and payload.status not in LEAD_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid post-call lead status")
     if user["role"] == "telecaller" and payload.call_outcome == "connected" and not payload.status:
         raise HTTPException(status_code=400, detail="A post-call lead status is required")
@@ -3248,7 +3345,7 @@ async def update_call_outcome(lead_id: str, call_id: str, payload: CallOutcomeUp
         "outcome_updated_by": ObjectId(user["id"]),
         "outcome_updated_by_name": user["name"],
     }})
-    lead_updates = {"updated_at": utcnow(), "last_action_at": utcnow(), "escalated": False}
+    lead_updates = {"updated_at": utcnow(), "last_action_at": utcnow(), "escalated": False, "last_call_outcome": payload.call_outcome}
     if payload.status:
         lead_updates["status"] = payload.status
         if payload.status == "converted" and user["role"] == "telecaller":
@@ -3271,12 +3368,17 @@ async def update_call_outcome(lead_id: str, call_id: str, payload: CallOutcomeUp
         await log_activity("status_changed", user, lead,
                            f"{previous_status or 'none'} -> {payload.status}",
                            status_from=previous_status, status_to=payload.status)
+    updated_lead = await db.leads.find_one({"_id": lead["_id"]})
+    origin_id = request.headers.get("X-Realtime-Origin-Id") or request.headers.get("X-Origin-Id")
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated_lead, origin_id=origin_id)
     return {"ok": True, "call_outcome": payload.call_outcome,
-            "status": lead_updates.get("status", lead.get("status"))}
+            "status": updated_lead.get("status"),
+            "lead": serialize(updated_lead)}
 
 
 @api.post("/leads/{lead_id}/calls/manual")
 async def save_manual_call_outcome(lead_id: str, payload: ManualCallOutcomeUpdate,
+                                   request: Request,
                                    user: dict = Depends(current_user)):
     lead = await db.leads.find_one({"_id": oid(lead_id), **await lead_scope(user)})
     if not lead:
@@ -3285,8 +3387,7 @@ async def save_manual_call_outcome(lead_id: str, payload: ManualCallOutcomeUpdat
         raise HTTPException(status_code=403, detail="Not permitted")
     if payload.call_outcome not in {"connected", "not_connected"}:
         raise HTTPException(status_code=400, detail="Invalid call outcome")
-    post_call_statuses = {"interested", "not_interested", "follow_up", "converted", "lost"}
-    if payload.status and payload.status not in post_call_statuses:
+    if payload.status and payload.status not in LEAD_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid post-call lead status")
     if user["role"] == "telecaller" and payload.call_outcome == "connected" and not payload.status:
         raise HTTPException(status_code=400, detail="A post-call lead status is required")
@@ -3324,7 +3425,7 @@ async def save_manual_call_outcome(lead_id: str, payload: ManualCallOutcomeUpdat
         call_result = await db.call_attempts.insert_one(call_updates)
         call = {**call_updates, "_id": call_result.inserted_id}
 
-    lead_updates = {"updated_at": now, "last_action_at": now, "escalated": False}
+    lead_updates = {"updated_at": now, "last_action_at": now, "escalated": False, "last_call_outcome": payload.call_outcome}
     if payload.status:
         lead_updates["status"] = payload.status
         if payload.status == "converted" and user["role"] == "telecaller":
@@ -3347,9 +3448,13 @@ async def save_manual_call_outcome(lead_id: str, payload: ManualCallOutcomeUpdat
         await log_activity("status_changed", user, lead,
                            f"{previous_status or 'none'} -> {payload.status}",
                            status_from=previous_status, status_to=payload.status)
+    updated_lead = await db.leads.find_one({"_id": lead["_id"]})
+    origin_id = request.headers.get("X-Realtime-Origin-Id") or request.headers.get("X-Origin-Id")
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated_lead, origin_id=origin_id)
     return {"ok": True, "call_number": payload.call_number,
             "call_outcome": payload.call_outcome,
-            "status": lead_updates.get("status", lead.get("status"))}
+            "status": updated_lead.get("status"),
+            "lead": serialize(updated_lead)}
 
 
 @api.post("/leads/bulk-delete")
@@ -3380,7 +3485,7 @@ async def delete_lead(lead_id: str, user: dict = Depends(current_user)):
 
 
 @api.patch("/leads/{lead_id}")
-async def update_lead(lead_id: str, payload: LeadUpdate, user: dict = Depends(current_user)):
+async def update_lead(lead_id: str, payload: LeadUpdate, request: Request, user: dict = Depends(current_user)):
     lead = await db.leads.find_one({"_id": oid(lead_id), **await lead_scope(user)})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -3434,11 +3539,15 @@ async def update_lead(lead_id: str, payload: LeadUpdate, user: dict = Depends(cu
             await log_activity("status_changed", user, lead,
                                f"{previous_status or 'none'} -> {updates['status']}",
                                status_from=previous_status, status_to=updates["status"])
-    return serialize(await db.leads.find_one({"_id": lead["_id"]}))
+    updated_lead = await db.leads.find_one({"_id": lead["_id"]})
+    origin_id = request.headers.get("X-Realtime-Origin-Id") or request.headers.get("X-Origin-Id")
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated_lead, origin_id=origin_id)
+    return serialize(updated_lead)
 
 
 @api.post("/leads/{lead_id}/conversion/approve")
 async def approve_conversion(lead_id: str, payload: ConversionApproval,
+                              request: Request,
                               user: dict = Depends(current_user)):
     if user["role"] not in ("admin", "subadmin", "team_leader"):
         raise HTTPException(status_code=403, detail="Only a team leader or manager can approve conversions")
@@ -3455,11 +3564,14 @@ async def approve_conversion(lead_id: str, payload: ConversionApproval,
     }})
     detail = f"Ticket size: {payload.ticket_size:g}" if payload.ticket_size is not None else "Approved without ticket size"
     await log_activity("conversion_approved", user, lead, detail)
-    return serialize(await db.leads.find_one({"_id": lead["_id"]}))
+    updated_lead = await db.leads.find_one({"_id": lead["_id"]})
+    origin_id = request.headers.get("X-Realtime-Origin-Id") or request.headers.get("X-Origin-Id")
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated_lead, origin_id=origin_id)
+    return serialize(updated_lead)
 
 
 @api.post("/leads/{lead_id}/notes")
-async def add_note(lead_id: str, payload: NoteCreate, user: dict = Depends(current_user)):
+async def add_note(lead_id: str, payload: NoteCreate, request: Request, user: dict = Depends(current_user)):
     lead = await db.leads.find_one({"_id": oid(lead_id), **await lead_scope(user)})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -3480,7 +3592,10 @@ async def add_note(lead_id: str, payload: NoteCreate, user: dict = Depends(curre
         await log_activity("status_changed", user, lead,
                            f"{previous_status or 'none'} -> {payload.status}",
                            status_from=previous_status, status_to=payload.status)
-    return serialize(await db.leads.find_one({"_id": lead["_id"]}))
+    updated_lead = await db.leads.find_one({"_id": lead["_id"]})
+    origin_id = request.headers.get("X-Realtime-Origin-Id") or request.headers.get("X-Origin-Id")
+    await realtime_broadcaster.broadcast_lead_event("lead:updated", updated_lead, origin_id=origin_id)
+    return serialize(updated_lead)
 
 
 def smartflo_number(value: str) -> str:
@@ -5218,6 +5333,40 @@ async def export_database(user: dict = Depends(current_user)):
     filename = f"crm_export_{db.name}_{stamp}.zip"
     return FileResponse(tmp_path, media_type="application/zip", filename=filename,
                         background=BackgroundTask(os.remove, tmp_path))
+
+
+@api.get("/realtime/stream")
+@app.get("/realtime/stream")
+async def realtime_stream(request: Request, user: dict = Depends(current_user)):
+    user_id = str(user["id"])
+    role = user.get("role", "")
+    queue = await realtime_broadcaster.connect(user_id, role)
+
+    async def event_generator():
+        try:
+            yield f"event: connected\ndata: {json.dumps({'status': 'connected', 'user_id': user_id})}\n\n"
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield msg
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        break
+                    yield ": ping\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            await realtime_broadcaster.disconnect(user_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 app.include_router(api)

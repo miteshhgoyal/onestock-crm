@@ -29,6 +29,30 @@ LEAD_STATUSES = (
     "converted",
     "lost",
 )
+UNWORKED_STATUSES = ("new_lead", "assigned")
+
+
+def is_lead_worked(lead: dict) -> bool:
+    """
+    A lead is considered worked if:
+    - its status is anything other than 'new_lead' or 'assigned' (e.g. contacted, not_connected, not_picked_up, follow_up, interested, not_interested, converted, lost)
+    - OR a call outcome has been recorded for it.
+    """
+    if not lead:
+        return False
+    status = lead.get("status")
+    if status and status not in UNWORKED_STATUSES:
+        return True
+    if lead.get("last_call_outcome"):
+        return True
+    calls = lead.get("calls") or []
+    if any(bool(c.get("call_outcome") or c.get("manual_call_outcome")) for c in calls):
+        return True
+    return False
+
+
+def is_lead_unworked(lead: dict) -> bool:
+    return not is_lead_worked(lead)
 LEAD_SOURCES = ("manual", "csv", "website_form", "facebook_ads", "google_ads", "whatsapp", "payment_webhook", "other")
 
 OCCUPATIONS = ("businessman", "job", "self_employed", "student", "retired", "homemaker", "other")
@@ -260,6 +284,7 @@ class Lead(BaseDocument):
     team_id: Optional[PyObjectId] = None
     assigned_at: Optional[datetime] = None
     last_action_at: Optional[datetime] = None
+    last_call_outcome: Optional[str] = None
     next_follow_up_at: Optional[datetime] = None
     escalated: bool = False
     reassign_count: int = 0

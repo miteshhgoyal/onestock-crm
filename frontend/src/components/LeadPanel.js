@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, CalendarClock, CheckSquare, Mail, MessageCircle, Phone, Save, Tag, Trash2, UserCog, Video, X } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
-import { formatTeamDate, STATUSES, STATUS_META, SOURCE_LABEL, fmtDate, relative, teamCurrentHour, toTeamIso } from "@/lib/constants";
+import { formatTeamDate, STATUSES, STATUS_META, SOURCE_LABEL, fmtDate, relative, teamCurrentHour, toTeamIso, UNWORKED_STATUSES } from "@/lib/constants";
+import { generateOriginId } from "@/lib/realtime";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { profileFromLead, profilePayload } from "@/lib/leadProfile";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 
-export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = false, canDelete = false, onChanged, onDeleted }) => {
+export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = false, canDelete = false, onChanged, onDeleted, onOptimisticUpdate, onRollback }) => {
   const { user } = useAuth();
   const [lead, setLead] = useState(null);
   const [note, setNote] = useState("");
@@ -93,46 +94,103 @@ export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = fa
     const profileChanged = JSON.stringify(profileData) !== JSON.stringify(originalProfileData);
     const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lead.tags || []);
     const courseChanged = courseId !== (lead.course_id || "");
-    const statusChanged = status !== lead.status;
+
+    // Determine target effective status
+    let effectiveStatus = status;
+    if (postCallStatus !== "none") {
+      effectiveStatus = postCallStatus;
+    } else if (callOutcome === "not_connected" && UNWORKED_STATUSES.includes(lead.status) && UNWORKED_STATUSES.includes(status)) {
+      effectiveStatus = "not_connected";
+    }
+
+    const statusChanged = effectiveStatus !== lead.status;
     const hasLeadChanges = note.trim() || statusChanged || date || followUpCleared || tagsChanged || courseChanged;
+
     if (!profileChanged && !hasLeadChanges && !callOutcomeChanged) {
       toast.error("Make a change before saving");
       return;
     }
-    if (callOutcomeChanged && callOutcome === "connected" && user?.role === "telecaller" && postCallStatus === "none") {
+    if (callOutcomeChanged && callOutcome === "connected" && user?.role === "telecaller" && UNWORKED_STATUSES.includes(effectiveStatus)) {
       toast.error("Choose a lead status for connected calls");
       return;
     }
+
     setSaving(true);
+    const originId = generateOriginId();
+    const previousLead = lead;
+    const previousStatus = status;
+    const previousPostCallStatus = postCallStatus;
+    const savedNote = note;
+
+    const optimisticLead = {
+      ...lead,
+      status: effectiveStatus,
+      last_call_outcome: callOutcome || lead.last_call_outcome,
+      next_follow_up_at: followUpCleared ? null : (date ? followUpIso : lead.next_follow_up_at),
+      updated_at: new Date().toISOString(),
+      last_action_at: new Date().toISOString(),
+      tags: tagsChanged ? tags : (lead.tags || []),
+      course_id: courseChanged ? courseId || null : (lead.course_id || null),
+      notes: note.trim()
+        ? [{ text: note.trim(), author_name: user?.name || "You", created_at: new Date().toISOString() }, ...(lead.notes || [])]
+        : (lead.notes || []),
+      activities: [
+        ...(statusChanged ? [{ action: "status_changed", detail: `${lead.status || "none"} -> ${effectiveStatus}`, created_at: new Date().toISOString() }] : []),
+        ...(callOutcome ? [{ action: "call_outcome_recorded", detail: `Call ${selectedCallNumber}: ${callOutcome}`, created_at: new Date().toISOString() }] : []),
+        ...(note.trim() ? [{ action: "call_note_added", detail: note.trim().slice(0, 120), created_at: new Date().toISOString() }] : []),
+        ...(lead.activities || []),
+      ],
+    };
+
+    // Optimistic UI updates
+    setLead(optimisticLead);
+    setStatus(effectiveStatus);
+    setNote("");
+    onOptimisticUpdate?.(optimisticLead, originId, previousLead);
+    onChanged?.(optimisticLead, { optimistic: true, originId });
+
     try {
-      if (profileChanged) await api.patch(`/leads/${leadId}`, profileData);
-      if (callOutcomeChanged) {
-        const payload = { call_outcome: callOutcome };
-        if (postCallStatus !== "none") payload.status = postCallStatus;
-        if (postCallStatus === "follow_up" && date) payload.next_follow_up_at = followUpIso;
-        await api.post(`/leads/${leadId}/calls/manual`, { ...payload, call_number: selectedCallNumber });
+      if (profileChanged) {
+        await api.patch(`/leads/${leadId}`, profileData, { headers: { "X-Realtime-Origin-Id": originId } });
+      }
+      if (callOutcomeChanged || callOutcome) {
+        const payload = { call_outcome: callOutcome, call_number: selectedCallNumber };
+        if (effectiveStatus) payload.status = effectiveStatus;
+        if (effectiveStatus === "follow_up" && date) payload.next_follow_up_at = followUpIso;
+        await api.post(`/leads/${leadId}/calls/manual`, payload, { headers: { "X-Realtime-Origin-Id": originId } });
       }
       if (hasLeadChanges && note.trim()) {
         await api.post(`/leads/${leadId}/notes`, {
           text: note.trim(),
-          status: statusChanged ? status : null,
-          next_follow_up_at: followUpIso,
-        });
-        if (tagsChanged || courseChanged || followUpCleared) await api.patch(`/leads/${leadId}`, { tags: tagsChanged ? tags : null, course_id: courseChanged ? courseId || null : null, ...(followUpCleared ? { next_follow_up_at: null } : {}) });
-      } else if (hasLeadChanges) {
+          status: statusChanged ? effectiveStatus : null,
+          next_follow_up_at: followUpCleared ? null : (date ? followUpIso : null),
+        }, { headers: { "X-Realtime-Origin-Id": originId } });
+        if (tagsChanged || courseChanged || followUpCleared) {
+          await api.patch(`/leads/${leadId}`, {
+            tags: tagsChanged ? tags : null,
+            course_id: courseChanged ? courseId || null : null,
+            ...(followUpCleared ? { next_follow_up_at: null } : {}),
+          }, { headers: { "X-Realtime-Origin-Id": originId } });
+        }
+      } else if (hasLeadChanges && !callOutcomeChanged) {
         await api.patch(`/leads/${leadId}`, {
-          status: statusChanged ? status : null,
-          next_follow_up_at: followUpCleared ? null : followUpIso,
+          status: statusChanged ? effectiveStatus : null,
+          next_follow_up_at: followUpCleared ? null : (date ? followUpIso : null),
           tags: tagsChanged ? tags : null,
           course_id: courseChanged ? courseId || null : null,
-        });
+        }, { headers: { "X-Realtime-Origin-Id": originId } });
       }
-      setNote("");
       toast.success("Lead updated");
       setPostCallStatus("none");
       await load();
-      onChanged?.();
+      onChanged?.(optimisticLead, { reconciled: true, originId });
     } catch (e) {
+      setLead(previousLead);
+      setStatus(previousStatus);
+      setPostCallStatus(previousPostCallStatus);
+      setNote(savedNote);
+      onRollback?.(previousLead, originId);
+      onChanged?.(previousLead, { rollback: true, originId });
       toast.error(errMsg(e));
     } finally {
       setSaving(false);
@@ -368,7 +426,14 @@ export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = fa
                 </div>
                 <div>
                   <div className="overline mb-2">Call outcome</div>
-                  <Select value={callOutcome} onValueChange={setCallOutcome}>
+                  <Select value={callOutcome} onValueChange={(val) => {
+                    setCallOutcome(val);
+                    if (val === "not_connected" && postCallStatus === "none" && UNWORKED_STATUSES.includes(status)) {
+                      setStatus("not_connected");
+                    } else if (val === "connected" && postCallStatus === "none" && UNWORKED_STATUSES.includes(status)) {
+                      setStatus("contacted");
+                    }
+                  }}>
                     <SelectTrigger data-testid="call-outcome-select" className="rounded-none border-border/70 bg-[#0c0c0f]"><SelectValue placeholder="Select result" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="connected">Connected</SelectItem>
@@ -378,7 +443,10 @@ export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = fa
                 </div>
                 <div>
                   <div className="overline mb-2">Lead status after call</div>
-                  <Select value={postCallStatus} onValueChange={(value) => { setPostCallStatus(value); if (value !== "none") setStatus(value); }}>
+                  <Select value={postCallStatus} onValueChange={(value) => {
+                    setPostCallStatus(value);
+                    if (value !== "none") setStatus(value);
+                  }}>
                     <SelectTrigger data-testid="post-call-status-select" className="rounded-none border-border/70 bg-[#0c0c0f]"><SelectValue placeholder="Keep current status" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Keep current status</SelectItem>
@@ -402,7 +470,16 @@ export const LeadPanel = ({ leadId, assignees = [], courses = [], canAssign = fa
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <div className="overline mb-2">Status</div>
-                <Select value={status} onValueChange={setStatus}>
+                <Select value={status} onValueChange={(val) => {
+                  setStatus(val);
+                  if (["interested", "not_interested", "follow_up", "converted", "lost"].includes(val)) {
+                    setPostCallStatus(val);
+                  } else {
+                    setPostCallStatus("none");
+                    if (val === "not_connected") setCallOutcome("not_connected");
+                    else if (val === "contacted") setCallOutcome("connected");
+                  }
+                }}>
                   <SelectTrigger data-testid="lead-status-select" className="rounded-none border-border/70 bg-[#0c0c0f]">
                     <SelectValue />
                   </SelectTrigger>

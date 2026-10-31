@@ -55,7 +55,9 @@ def extract_token(request: Request) -> Optional[str]:
     header = request.headers.get("Authorization", "")
     if header.startswith("Bearer "):
         return header[7:]
-    return request.cookies.get("access_token")
+    if request.cookies.get("access_token"):
+        return request.cookies.get("access_token")
+    return request.query_params.get("token")
 
 
 def decode_token(token: str, expected_type: str = "access") -> dict:

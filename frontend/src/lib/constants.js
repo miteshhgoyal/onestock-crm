@@ -13,6 +13,18 @@ export const STATUS_META = {
 
 export const STATUSES = Object.keys(STATUS_META);
 
+export const UNWORKED_STATUSES = ["new_lead", "assigned"];
+
+export const isLeadWorked = (lead) => {
+  if (!lead) return false;
+  if (!UNWORKED_STATUSES.includes(lead.status)) return true;
+  if (lead.last_call_outcome) return true;
+  if (lead.calls && lead.calls.some((c) => Boolean(c.call_outcome || c.manual_call_outcome))) return true;
+  return false;
+};
+
+export const isLeadUnworked = (lead) => !isLeadWorked(lead);
+
 export const SOURCE_LABEL = {
   manual: "Manual",
   csv: "CSV Import",
